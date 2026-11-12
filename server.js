@@ -38,10 +38,10 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
 // ─── Protecciones generales ───
-let ipSourceLogged = false;
+const ipSourcesSeen = new Set();
 const ipOf = (req) => {
   const { ip, source } = clientIp(req, { behindRender: ON_RENDER });
-  if (!ipSourceLogged) { ipSourceLogged = true; console.log(`[seguridad] IP del visitante tomada de: ${source}`); }
+  if (!ipSourcesSeen.has(source)) { ipSourcesSeen.add(source); console.log(`[seguridad] IP del visitante tomada de: ${source}`); }
   return ip;
 };
 app.use(securityHeaders({ https: HTTPS }));
