@@ -9,7 +9,7 @@ Web del servidor Panamá RP (ER:LC) con inicio de sesión de Discord y contadore
 | `DISCORD_CLIENT_ID` | Client ID de tu aplicación de Discord |
 | `DISCORD_CLIENT_SECRET` | Client Secret de tu aplicación de Discord |
 | `SESSION_SECRET` | Texto largo aleatorio para firmar la sesión |
-| `DISCORD_INVITE_CODE` | Código de invitación (por defecto `j47JGCtxb`) |
+| `DISCORD_INVITE_CODE` | Código de invitación (por defecto `fgRGQPbJF3`) |
 | `DISCORD_GUILD_ID` | *(opcional)* solo deja entrar a miembros de tu servidor |
 
 En el portal de Discord (OAuth2 → Redirects) agrega:

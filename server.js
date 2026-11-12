@@ -14,7 +14,7 @@ const BASE_URL = (process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || `ht
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
 const CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || '';
 const REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || `${BASE_URL}/auth/discord/callback`;
-const INVITE_CODE = process.env.DISCORD_INVITE_CODE || 'j47JGCtxb';
+const INVITE_CODE = process.env.DISCORD_INVITE_CODE || 'fgRGQPbJF3';
 const GUILD_ID = process.env.DISCORD_GUILD_ID || '';
 const API = 'https://discord.com/api/v10';
 
