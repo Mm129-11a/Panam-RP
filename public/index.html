@@ -149,6 +149,8 @@ section.block{padding:100px 0}
 .panel:not(.open) .big{inset:28px 0 auto 0;height:90px;font-size:clamp(40px,4vw,56px)}
 .pl i{display:block;width:34px;height:4px;border-radius:2px;margin-bottom:10px;background:var(--c)}
 .panel:not(.open) .pl i{display:none}
+.panel .art.photo{background-size:cover;background-position:center}
+.panel .art.photo::before{display:none}
 .art.ems{background:linear-gradient(160deg,#4f9fd0,#2a5f86 50%,#1a2b3c)}
 .art.obr{background:linear-gradient(160deg,#8a6a43,#4b3a26 60%,#1f1912)}
 .art.bom{background:linear-gradient(160deg,#9b2323,#4a1515 60%,#1b0d0d)}
@@ -156,7 +158,7 @@ section.block{padding:100px 0}
 .art.rp{background:linear-gradient(160deg,#3a1c52,#162050 55%,#0b0f1e)}
 
 /* ── Equipo: avatares redondos ── */
-.team{display:grid;grid-template-columns:repeat(4,1fr);gap:22px}
+.team{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
 .member{text-align:center;padding:34px 20px 28px;border-radius:24px;background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line);transition:transform .2s,border-color .2s}
 .member:hover{transform:translateY(-4px);border-color:rgba(58,106,240,.45)}
 .ring{width:118px;height:118px;margin:0 auto 18px;border-radius:50%;padding:4px;background:conic-gradient(from 180deg,var(--blue2) 0 50%,var(--red) 50% 100%)}
@@ -222,6 +224,10 @@ footer{border-top:1px solid rgba(255,255,255,.06);background:var(--bg2)}
   .nav-right{margin-left:auto}
 }
 @media (max-width:900px){
+  .team{grid-template-columns:repeat(3,1fr)}
+  .member{padding:26px 12px 22px}
+  .ring{width:92px;height:92px}
+  .ring div{font-size:38px}
   .hero{padding:40px 0 56px}
   .hero-grid{grid-template-columns:1fr;text-align:center}
   .hero-visual{order:-1}
@@ -240,7 +246,6 @@ footer{border-top:1px solid rgba(255,255,255,.06);background:var(--bg2)}
   .panel:not(.open) .pl{left:20px;right:20px;transform:none}
   .panel:not(.open) .pl b{writing-mode:horizontal-tb;transform:none}
   .panel:not(.open) .big{inset:0 0 0 auto;width:120px;height:auto;font-size:48px}
-  .team{grid-template-columns:repeat(2,1fr)}
   .rules,.shop{grid-template-columns:1fr}
   .foot{grid-template-columns:1fr 1fr}
   .foot > div:first-child{grid-column:1/-1}
@@ -252,10 +257,12 @@ footer{border-top:1px solid rgba(255,255,255,.06);background:var(--bg2)}
   .nav-right .btn{padding:10px 14px;font-size:14px}
   .nav-right .btn .lbl-long{display:none}
   .userchip span{display:none}
-  .team{gap:14px}
-  .member{padding:26px 12px 22px}
-  .ring{width:96px;height:96px}
-  .ring div{font-size:40px}
+  .team{grid-template-columns:1fr;gap:12px}
+  .member{display:flex;align-items:center;gap:18px;text-align:left;padding:18px 20px}
+  .ring{width:76px;height:76px;margin:0;flex-shrink:0}
+  .ring div{font-size:32px}
+  .member h3{margin-bottom:8px}
+  .member small{margin-top:8px}
   .notice{flex-direction:column;text-align:center}
 }
 </style>
@@ -459,18 +466,18 @@ const CONFIG = {
   serverCode: 'PANAMARP', // ← pon aquí el código real de tu servidor
   online: 22, members: 61, // respaldo si no carga el dato en vivo
   links: { discord: 'https://discord.gg/fgRGQPbJF3', youtube: '', tiktok: '', instagram: '', roblox: '' },
+  // Para poner fotos: sube la imagen a /public/img/galeria/ y escribe la ruta en img, por ejemplo img: '/img/galeria/ems.webp'
   gallery: [
-    { cls: 'ems', label: 'EMS', icon: '🚑', color: '#4f9fd0', desc: 'Atiende emergencias y salva vidas.' },
-    { cls: 'obr', label: 'Obreros', icon: '🚧', color: '#f0a43a', desc: 'Construye y mantén la ciudad en pie.' },
-    { cls: 'bom', label: 'Bomberos', icon: '🚒', color: '#ff5a62', desc: 'Apaga incendios y rescata a quien lo necesite.' },
-    { cls: 'tra', label: 'Policía de Tránsito', icon: '🚓', color: '#7aa2ff', desc: 'Controla el tráfico y la seguridad vial.' },
-    { cls: 'rp', label: 'Rol libre', icon: '🌃', color: '#b28cff', desc: 'Vive tu propia historia en la ciudad.' },
+    { cls: 'ems', img: '', label: 'EMS', icon: '🚑', color: '#4f9fd0', desc: 'Atiende emergencias y salva vidas.' },
+    { cls: 'obr', img: '', label: 'Obreros', icon: '🚧', color: '#f0a43a', desc: 'Construye y mantén la ciudad en pie.' },
+    { cls: 'bom', img: '', label: 'Bomberos', icon: '🚒', color: '#ff5a62', desc: 'Apaga incendios y rescata a quien lo necesite.' },
+    { cls: 'tra', img: '', label: 'Policía de Tránsito', icon: '🚓', color: '#7aa2ff', desc: 'Controla el tráfico y la seguridad vial.' },
+    { cls: 'rp', img: '', label: 'Rol libre', icon: '🌃', color: '#b28cff', desc: 'Vive tu propia historia en la ciudad.' },
   ],
   team: [
     { name: 'kalevft26', role: 'Fundador', icon: '👑' },
     { name: 'Por asignar', role: 'Co-Fundador', icon: '🛡️' },
     { name: 'Por asignar', role: 'Developer', icon: '💻' },
-    { name: 'Por asignar', role: 'Administrador', icon: '⭐' },
   ],
   rules: [
     ['Respeto ante todo', 'Trata a todos con respeto dentro y fuera del rol. Insultos, discriminación o toxicidad se sancionan.'],
@@ -503,17 +510,17 @@ $('#year').textContent = new Date().getFullYear();
 
 $('#panels').innerHTML = CONFIG.gallery.map((g,i)=>`
   <div class="panel ${i===0?'open':''}" style="--c:${g.color}" data-panel>
-    <div class="art ${g.cls}"></div>
-    <div class="big">${g.icon}</div>
+    <div class="art ${g.img?'photo':g.cls}"${g.img?` style="background-image:url('${esc(g.img)}')"`:''}></div>
+    ${g.img?'':`<div class="big">${g.icon}</div>`}
     <div class="pl"><i></i><b>${esc(g.label)}</b><p>${esc(g.desc)}</p></div>
   </div>`).join('');
 
 $('#team').innerHTML = CONFIG.team.map((m,i)=>`
   <div class="member reveal">
     <div class="ring"><div>${m.icon}</div></div>
-    <h3>${esc(m.name)}</h3>
+    <div class="mtext"><h3>${esc(m.name)}</h3>
     <span class="role">${esc(m.role)}</span>
-    <small>#${String(i+1).padStart(3,'0')}</small>
+    <small>#${String(i+1).padStart(3,'0')}</small></div>
   </div>`).join('');
 
 $('#rules').innerHTML = CONFIG.rules.map(([t,d],i)=>`<div class="rule"><div class="n">${String(i+1).padStart(2,'0')}</div><div><h3>${esc(t)}</h3><p>${esc(d)}</p></div></div>`).join('');
