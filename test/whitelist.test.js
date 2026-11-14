@@ -95,6 +95,18 @@ test('el mensaje al staff no permite @everyone y respeta límites de Discord', (
   assert.ok(total <= 6000, `embed demasiado largo: ${total}`);
 });
 
+test('el staff ve el avatar de Roblox solo si viene del CDN de Roblox', () => {
+  const { data } = validateApplication(goodBody(), { now: NOW });
+  const base = { user: { id: '1414024365342986424', name: 'elpibasasooo' }, data, score: scoreApplication(data.respuestas) };
+  const img = 'https://tr.rbxcdn.com/30DAY-AvatarHeadshot-ABC-Png/150/150/AvatarHeadshot/Png/noFilter';
+  const withPic = buildWebhookPayload({ ...base, roblox: { id: 1, name: 'Santi_RP2', displayName: 'Santi', avatar: img } });
+  assert.equal(withPic.embeds[0].thumbnail.url, img);
+  for (const avatar of [null, 'https://evil.example/x.png', 'javascript:alert(1)', 'https://rbxcdn.com.evil.net/x']) {
+    const p = buildWebhookPayload({ ...base, roblox: { id: 1, name: 'Santi_RP2', displayName: 'Santi', avatar } });
+    assert.equal(p.embeds[0].thumbnail, undefined, String(avatar));
+  }
+});
+
 test('solo se aceptan URLs reales de webhook de Discord', () => {
   assert.ok(WEBHOOK_RE.test('https://discord.com/api/webhooks/123456789012345678/AbCdEf_123-xyzABCDEFGHIJKLMNOP'));
   assert.ok(!WEBHOOK_RE.test('https://evil.example/api/webhooks/1/abc'));

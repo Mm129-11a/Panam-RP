@@ -123,7 +123,12 @@
   function foundHtml() {
     const r = S.d.robloxUser;
     if (!r || r.name.toLowerCase() !== clean(S.d.roblox).toLowerCase()) return '';
-    return `<div class="ap-found">✓ <span><b>${esc(r.displayName)}</b> (@${esc(r.name)}) · ID ${esc(r.id)}</span></div>`;
+    const pic = r.avatar ? `<img src="${esc(r.avatar)}" alt="Avatar de ${esc(r.name)}" data-rbx-img />` : '';
+    return `<div class="ap-rbx">
+        <div class="ap-rbx-pic"><span class="ph">${esc(r.name.charAt(0).toUpperCase())}</span>${pic}</div>
+        <div class="ap-rbx-info"><small>ROBLOX · VERIFICADO</small><b>${esc(r.displayName)}</b><span>@${esc(r.name)} · ID ${esc(r.id)}</span></div>
+        <span class="ap-rbx-ok" aria-label="Verificado">✓</span>
+      </div>`;
   }
 
   function selectField(k, label) {
@@ -232,11 +237,19 @@
 
   // ─── Eventos ───
   const content = $('#ap-content');
+  let autoLookup = 0;
+  // Si la imagen del avatar no carga, queda la inicial
+  document.addEventListener('error', (e) => {
+    if (e.target instanceof HTMLImageElement && e.target.hasAttribute('data-rbx-img')) e.target.remove();
+  }, true);
   content.addEventListener('input', (e) => {
     const t = e.target;
     if (t.id === 'f-roblox') {
       S.d.roblox = t.value;
       $('#roblox-found').innerHTML = foundHtml();
+      // Busca solo el avatar cuando dejas de escribir
+      clearTimeout(autoLookup);
+      if (ROBLOX_RE.test(clean(t.value)) && !$('#roblox-found').innerHTML) autoLookup = setTimeout(() => verifyRoblox(true), 900);
     } else if (t.dataset.p) {
       S.d.personaje[t.dataset.p] = t.value;
     } else if (t.tagName === 'TEXTAREA' && t.dataset.q) {
@@ -258,7 +271,7 @@
     }
   });
   content.addEventListener('keydown', (e) => {
-    if (e.target.id === 'f-roblox' && e.key === 'Enter') { e.preventDefault(); verifyRoblox(); }
+    if (e.target.id === 'f-roblox' && e.key === 'Enter') { e.preventDefault(); verifyRoblox(false); }
   });
   content.addEventListener('click', (e) => {
     const opt = e.target.closest('.ap-opt[data-q]');
@@ -270,30 +283,37 @@
       saveDraft();
       return;
     }
-    if (e.target.closest('#btn-verify')) verifyRoblox();
+    if (e.target.closest('#btn-verify')) verifyRoblox(false);
   });
 
-  async function verifyRoblox() {
+  let lookupSeq = 0;
+  async function verifyRoblox(auto = false) {
     const input = $('#f-roblox');
     const btn = $('#btn-verify');
+    if (!input || !btn) return;
     const u = clean(input.value);
-    if (!ROBLOX_RE.test(u)) return showErrors({ roblox: 'Usa solo letras, números o _ (3 a 20 caracteres).' });
+    if (!ROBLOX_RE.test(u)) return auto ? undefined : showErrors({ roblox: 'Usa solo letras, números o _ (3 a 20 caracteres).' });
+    clearTimeout(autoLookup);
+    const seq = ++lookupSeq;
     btn.disabled = true; btn.textContent = 'Buscando…';
     try {
       const r = await fetch(`/api/roblox?usuario=${encodeURIComponent(u)}`);
       const j = await r.json().catch(() => ({}));
+      // Si mientras tanto escribiste otro usuario o cambiaste de paso, esta respuesta ya no sirve
+      if (seq !== lookupSeq || !document.body.contains(input) || clean(input.value).toLowerCase() !== u.toLowerCase()) return;
       if (r.ok && j.user) {
-        S.d.roblox = j.user.name; S.d.robloxUser = j.user; input.value = j.user.name;
+        S.d.roblox = j.user.name; S.d.robloxUser = j.user;
+        if (input.value !== j.user.name) input.value = j.user.name;
         $('#roblox-found').innerHTML = foundHtml();
         showErrors({});
         saveDraft();
-      } else {
+      } else if (!(auto && r.status === 429)) {
         showErrors({ roblox: r.status === 429 ? 'Demasiadas búsquedas. Espera un minuto.' : (j.error || 'No se pudo verificar.') });
       }
     } catch {
-      showErrors({ roblox: 'Sin conexión. Intenta de nuevo.' });
+      if (!auto) showErrors({ roblox: 'Sin conexión. Intenta de nuevo.' });
     } finally {
-      btn.disabled = false; btn.textContent = 'Verificar';
+      if (seq === lookupSeq && document.body.contains(btn)) { btn.disabled = false; btn.textContent = 'Verificar'; }
     }
   }
 

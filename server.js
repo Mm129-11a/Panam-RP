@@ -61,7 +61,7 @@ const authLimit = rateLimit({
   message: 'Demasiados intentos de inicio de sesión. Espera unos minutos.',
 });
 const apiLimit = rateLimit({ windowMs: 60_000, max: 60, keyFn: ipOf });
-const robloxLimit = rateLimit({ windowMs: 60_000, max: 15, keyFn: ipOf, message: 'Demasiadas búsquedas. Espera un minuto.' });
+const robloxLimit = rateLimit({ windowMs: 60_000, max: 30, keyFn: ipOf, message: 'Demasiadas búsquedas. Espera un minuto.' });
 const submitLimit = rateLimit({ windowMs: 60 * 60_000, max: 10, keyFn: ipOf, message: 'Demasiados envíos. Intenta más tarde.' });
 const noStore = (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); };
 
@@ -163,12 +163,25 @@ app.get('/api/solicitud/preguntas', apiLimit, (req, res) => {
   res.json({ sections: publicSections(), options: OPTIONS, receiving: Boolean(WEBHOOK_URL) });
 });
 
-// Busca el usuario en Roblox (desde el servidor; el navegador nunca habla con Roblox).
+// Busca el usuario en Roblox (desde el servidor; el navegador nunca habla con la API de Roblox).
+const ROBLOX_IMG_RE = /^https:\/\/[a-z0-9-]+\.rbxcdn\.com\/[\w\-./%]+$/i;
+async function robloxHeadshot(id) {
+  try {
+    const r = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${id}&size=150x150&format=Png&isCircular=false`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!r.ok) return null;
+    const t = (await r.json())?.data?.[0];
+    return t && t.state === 'Completed' && typeof t.imageUrl === 'string' && ROBLOX_IMG_RE.test(t.imageUrl) ? t.imageUrl : null;
+  } catch {
+    return null; // sin avatar se muestra la inicial; no impide verificar
+  }
+}
 const robloxCache = new Map();
 async function lookupRoblox(username) {
   const key = username.toLowerCase();
   const hit = robloxCache.get(key);
-  if (hit && Date.now() - hit.t < 10 * 60_000) return hit.user;
+  if (hit && Date.now() < hit.until) return hit.user;
   const r = await fetch('https://users.roblox.com/v1/usernames/users', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -179,10 +192,11 @@ async function lookupRoblox(username) {
   const d = await r.json();
   const u = Array.isArray(d?.data) ? d.data[0] : null;
   const user = u && Number.isSafeInteger(u.id)
-    ? { id: u.id, name: String(u.name).slice(0, 20), displayName: String(u.displayName || u.name).slice(0, 20) }
+    ? { id: u.id, name: String(u.name).slice(0, 20), displayName: String(u.displayName || u.name).slice(0, 20), avatar: await robloxHeadshot(u.id) }
     : null;
   if (robloxCache.size > 5000) robloxCache.clear();
-  robloxCache.set(key, { user, t: Date.now() });
+  // Si el avatar aún no estaba listo, se vuelve a pedir pronto
+  robloxCache.set(key, { user, until: Date.now() + (user && !user.avatar ? 60_000 : 10 * 60_000) });
   return user;
 }
 app.get('/api/roblox', robloxLimit, noStore, async (req, res) => {
