@@ -8,6 +8,9 @@ import { fileURLToPath } from 'node:url';
 import {
   securityHeaders, rateLimit, methodGuard, isSameOrigin, safeEqual, clientIp,
 } from './lib/security.js';
+import {
+  OPTIONS, publicSections, validateApplication, scoreApplication, buildWebhookPayload, ROBLOX_USER_RE, WEBHOOK_RE,
+} from './lib/whitelist.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -27,6 +30,11 @@ const INVITE_CODE = /^[A-Za-z0-9-]{2,32}$/.test(process.env.DISCORD_INVITE_CODE 
 const GUILD_ID = /^\d{5,25}$/.test(process.env.DISCORD_GUILD_ID || '') ? process.env.DISCORD_GUILD_ID : '';
 const API = 'https://discord.com/api/v10';
 const OAUTH_MAX_AGE = 10 * 60 * 1000; // el intento de login caduca a los 10 minutos
+// Canal de Discord donde llegan las solicitudes de whitelist (webhook del canal).
+const WEBHOOK_URL = WEBHOOK_RE.test(process.env.WHITELIST_WEBHOOK_URL || '') ? process.env.WHITELIST_WEBHOOK_URL : '';
+const RESUBMIT_WAIT = 24 * 60 * 60 * 1000; // una solicitud cada 24 h por cuenta
+// Páginas a las que se puede volver tras iniciar sesión (lista cerrada: evita redirecciones a otras webs).
+const RETURN_PATHS = ['/', '/solicitud'];
 
 // Sin un secreto fuerte cualquiera podría falsificar sesiones: en producción no arranca.
 if (IS_PROD && SESSION_SECRET.length < 32) {
@@ -45,7 +53,7 @@ const ipOf = (req) => {
   return ip;
 };
 app.use(securityHeaders({ https: HTTPS }));
-app.use(methodGuard(['/logout']));
+app.use(methodGuard(['/logout', '/api/solicitud']));
 app.use(rateLimit({ windowMs: 60_000, max: 300, keyFn: ipOf }));
 
 const authLimit = rateLimit({
@@ -53,6 +61,8 @@ const authLimit = rateLimit({
   message: 'Demasiados intentos de inicio de sesión. Espera unos minutos.',
 });
 const apiLimit = rateLimit({ windowMs: 60_000, max: 60, keyFn: ipOf });
+const robloxLimit = rateLimit({ windowMs: 60_000, max: 15, keyFn: ipOf, message: 'Demasiadas búsquedas. Espera un minuto.' });
+const submitLimit = rateLimit({ windowMs: 60 * 60_000, max: 10, keyFn: ipOf, message: 'Demasiados envíos. Intenta más tarde.' });
 const noStore = (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); };
 
 // ─── Sesión (cookie firmada) ───
@@ -72,10 +82,11 @@ const discordFetch = (url, opts = {}) => fetch(url, { ...opts, signal: AbortSign
 
 // ─── Inicio de sesión con Discord ───
 app.get('/auth/discord', authLimit, noStore, (req, res) => {
-  if (!loginConfigured()) return res.redirect('/?login=noconfig');
-  if (req.session.user) return res.redirect('/');
+  const next = RETURN_PATHS.includes(req.query.next) ? req.query.next : '/';
+  if (!loginConfigured()) return res.redirect(`${next}?login=noconfig`);
+  if (req.session.user) return res.redirect(next);
   const state = crypto.randomBytes(24).toString('hex');
-  req.session.oauth = { state, t: Date.now() };
+  req.session.oauth = { state, t: Date.now(), next };
   const params = new URLSearchParams({
     client_id: CLIENT_ID, redirect_uri: REDIRECT_URI, response_type: 'code',
     scope: GUILD_ID ? 'identify guilds' : 'identify', state, prompt: 'none',
@@ -87,11 +98,12 @@ app.get('/auth/discord/callback', authLimit, noStore, async (req, res) => {
   const { code, state, error } = req.query;
   const saved = req.session.oauth;
   req.session.oauth = null; // un intento de login solo se puede usar una vez
+  const back = (result) => res.redirect(`${saved && RETURN_PATHS.includes(saved.next) ? saved.next : '/'}?login=${result}`);
 
-  if (error || typeof code !== 'string' || !code || code.length > 256) return res.redirect('/?login=cancel');
+  if (error || typeof code !== 'string' || !code || code.length > 256) return back('cancel');
   if (!saved || typeof saved.state !== 'string' || Date.now() - Number(saved.t) > OAUTH_MAX_AGE
       || !safeEqual(typeof state === 'string' ? state : '', saved.state)) {
-    return res.redirect('/?login=error');
+    return back('error');
   }
 
   try {
@@ -116,7 +128,7 @@ app.get('/auth/discord/callback', authLimit, noStore, async (req, res) => {
     if (GUILD_ID) {
       const guildsRes = await discordFetch(`${API}/users/@me/guilds`, auth);
       const guilds = guildsRes.ok ? await guildsRes.json() : [];
-      if (!Array.isArray(guilds) || !guilds.some((g) => g && g.id === GUILD_ID)) return res.redirect('/?login=guild');
+      if (!Array.isArray(guilds) || !guilds.some((g) => g && g.id === GUILD_ID)) return back('guild');
     }
 
     const avatar = /^(a_)?[0-9a-f]{32}$/.test(String(u.avatar || ''))
@@ -124,10 +136,10 @@ app.get('/auth/discord/callback', authLimit, noStore, async (req, res) => {
       : `https://cdn.discordapp.com/embed/avatars/${Number((BigInt(u.id) >> 22n) % 6n)}.png`;
     const name = String(u.global_name || u.username || 'Usuario').slice(0, 64);
     req.session.user = { id: String(u.id), name, username: String(u.username || '').slice(0, 64), avatar };
-    res.redirect('/?login=ok');
+    back('ok');
   } catch (err) {
     console.error('[login]', err.message); // nunca se registran tokens ni secretos
-    res.redirect('/?login=error');
+    back('error');
   }
 });
 
@@ -140,8 +152,80 @@ app.post('/logout', noStore, (req, res) => {
 app.get('/logout', (req, res) => res.redirect('/'));
 
 // ─── API ───
+const recentlySubmitted = (req) => Date.now() - Number(req.session?.submittedAt || 0) < RESUBMIT_WAIT;
 app.get('/api/me', apiLimit, noStore, (req, res) => {
-  res.json({ user: req.session?.user || null, loginEnabled: loginConfigured() });
+  res.json({ user: req.session?.user || null, loginEnabled: loginConfigured(), submitted: recentlySubmitted(req) });
+});
+
+// ─── Solicitud de whitelist ───
+app.get('/api/solicitud/preguntas', apiLimit, (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.json({ sections: publicSections(), options: OPTIONS, receiving: Boolean(WEBHOOK_URL) });
+});
+
+// Busca el usuario en Roblox (desde el servidor; el navegador nunca habla con Roblox).
+const robloxCache = new Map();
+async function lookupRoblox(username) {
+  const key = username.toLowerCase();
+  const hit = robloxCache.get(key);
+  if (hit && Date.now() - hit.t < 10 * 60_000) return hit.user;
+  const r = await fetch('https://users.roblox.com/v1/usernames/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ usernames: [username], excludeBannedUsers: true }),
+    signal: AbortSignal.timeout(6000),
+  });
+  if (!r.ok) throw new Error(`Roblox respondió ${r.status}`);
+  const d = await r.json();
+  const u = Array.isArray(d?.data) ? d.data[0] : null;
+  const user = u && Number.isSafeInteger(u.id)
+    ? { id: u.id, name: String(u.name).slice(0, 20), displayName: String(u.displayName || u.name).slice(0, 20) }
+    : null;
+  if (robloxCache.size > 5000) robloxCache.clear();
+  robloxCache.set(key, { user, t: Date.now() });
+  return user;
+}
+app.get('/api/roblox', robloxLimit, noStore, async (req, res) => {
+  const username = typeof req.query.usuario === 'string' ? req.query.usuario.trim() : '';
+  if (!ROBLOX_USER_RE.test(username)) return res.status(400).json({ error: 'Usuario de Roblox inválido.' });
+  try {
+    const user = await lookupRoblox(username);
+    if (!user) return res.status(404).json({ error: 'No existe ese usuario en Roblox.' });
+    res.json({ user });
+  } catch (err) {
+    console.error('[roblox]', err.message);
+    res.status(502).json({ error: 'Roblox no respondió. Intenta de nuevo.' });
+  }
+});
+
+app.post('/api/solicitud', submitLimit, noStore, express.json({ limit: '20kb' }), async (req, res) => {
+  if (!isSameOrigin(req, ORIGIN)) return res.status(403).json({ error: 'Solicitud no permitida.' });
+  if (!loginConfigured()) return res.status(403).json({ error: 'Esto es una vista previa: el inicio de sesión aún no está activado.' });
+  const user = req.session?.user;
+  if (!user) return res.status(401).json({ error: 'Inicia sesión con Discord para enviar.' });
+  if (recentlySubmitted(req)) return res.status(409).json({ error: 'Ya enviaste una solicitud. Espera la respuesta del staff.' });
+  if (!WEBHOOK_URL) return res.status(503).json({ error: 'El staff aún no activó la recepción de solicitudes.' });
+
+  const { ok, errors, data } = validateApplication(req.body);
+  if (!ok) return res.status(400).json({ error: 'Revisa los campos marcados.', errors });
+
+  try {
+    const roblox = await lookupRoblox(data.roblox); // se vuelve a comprobar aquí: no se confía en el navegador
+    if (!roblox) return res.status(400).json({ error: 'Revisa los campos marcados.', errors: { roblox: 'No existe ese usuario en Roblox.' } });
+    const payload = buildWebhookPayload({ user, roblox, data, score: scoreApplication(data.respuestas) });
+    const r = await fetch(`${WEBHOOK_URL}?wait=true`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok) throw new Error(`webhook ${r.status}`);
+    req.session.submittedAt = Date.now();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[solicitud]', err.message);
+    res.status(502).json({ error: 'No se pudo enviar. Intenta de nuevo en unos minutos.' });
+  }
 });
 
 // Contadores de Discord: se consultan como mucho cada 5 minutos (cada 1 si falla),
@@ -193,8 +277,11 @@ app.use((req, res) => res.redirect('/'));
 
 // Errores: se registran en el servidor, pero al visitante nunca se le muestran detalles.
 app.use((err, req, res, next) => {
-  console.error('[error]', err && err.message ? err.message : err);
   if (res.headersSent) return next(err);
+  if (err && (err.status === 400 || err.status === 413)) {
+    return res.status(err.status).json({ error: err.status === 413 ? 'Solicitud demasiado grande.' : 'Datos inválidos.' });
+  }
+  console.error('[error]', err && err.message ? err.message : err);
   res.status(500).type('text').send('Error interno del servidor');
 });
 
@@ -202,4 +289,5 @@ app.listen(PORT, () => {
   console.log(`Panamá RP en ${BASE_URL}`);
   console.log(loginConfigured() ? 'Login con Discord: activo' : 'Login con Discord: falta DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET');
   console.log(`Redirect URI para Discord: ${REDIRECT_URI}`);
+  console.log(WEBHOOK_URL ? 'Solicitudes de whitelist: activas' : 'Solicitudes de whitelist: falta WHITELIST_WEBHOOK_URL');
 });

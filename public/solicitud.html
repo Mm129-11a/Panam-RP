@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#060a14" />
+<title>Whitelist · Panamá Roleplay</title>
+<link rel="icon" type="image/png" href="/img/favicon.png" />
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Saira:ital,wght@0,600;0,700;1,700;1,800;1,900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/css/styles.css" />
+<script src="/js/solicitud.js" defer></script>
+</head>
+<body class="ap-body">
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="/" aria-label="Inicio">
+      <img src="/img/logo.webp" alt="Panamá RP" width="48" height="48" />
+      <span class="brand-word">PANAMÁ<span>RP</span></span>
+    </a>
+    <div class="nav-right">
+      <a class="btn ghost" href="/">← Inicio</a>
+    </div>
+  </div>
+</header>
+
+<main class="ap-wrap">
+  <div class="ap-head">
+    <span class="eyebrow">Whitelist</span>
+    <h1 class="ap-title">Solicitud de whitelist</h1>
+    <p class="ap-sub">Completa los 4 pasos para entrar a Panamá RP. El staff revisa cada solicitud.</p>
+  </div>
+
+  <div id="ap-banner"></div>
+
+  <div class="ap-steps hidden" id="ap-steps">
+    <span class="fill" id="ap-fill" aria-hidden="true"></span>
+    <ol aria-label="Pasos">
+      <li data-step="0"><span class="dotn">1</span><span class="lbl">Identidad</span></li>
+      <li data-step="1"><span class="dotn">2</span><span class="lbl">Personaje</span></li>
+      <li data-step="2"><span class="dotn">3</span><span class="lbl">Conducta</span></li>
+      <li data-step="3"><span class="dotn">4</span><span class="lbl">Rol</span></li>
+    </ol>
+  </div>
+
+  <section class="ap-card">
+    <div class="ap-content" id="ap-content" aria-live="polite"><p class="ap-p">Cargando…</p></div>
+    <div class="ap-actions hidden" id="ap-actions">
+      <button type="button" class="btn ghost" id="ap-back">Atrás</button>
+      <button type="button" class="btn" id="ap-next">Siguiente</button>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+</body>
+</html>
