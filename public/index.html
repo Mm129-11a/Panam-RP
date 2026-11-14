@@ -27,7 +27,7 @@
       <a data-go="inicio">Inicio</a>
       <a data-scroll="unirte">Cómo unirte</a>
       <a data-scroll="equipo">Equipo</a>
-      <a href="/solicitud">Whitelist</a>
+      <a href="/solicitud" class="menu-wl"><span class="pulse" aria-hidden="true"></span>Whitelist</a>
       <a data-go="normativa">Normativa</a>
       <a data-go="tienda">Tienda</a>
     </nav>
@@ -53,9 +53,10 @@
           <div class="flagbar" aria-hidden="true"><i class="b"></i><span>★</span><i class="r"></i></div>
           <p class="tag">Tu historia, tu ciudad, tus reglas.</p>
           <div class="ctas">
-            <button class="btn lg" id="btn-login-hero" data-login><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.6 1.3a18.3 18.3 0 0 0-5.6 0L8.6 3a19.8 19.8 0 0 0-4.9 1.4C.6 9-.2 13.6.3 18.1a19.9 19.9 0 0 0 6 3l1.3-2.1c-.7-.3-1.4-.6-2-1l.5-.4a14.2 14.2 0 0 0 12.2 0l.5.4c-.6.4-1.3.7-2 1l1.3 2.1a19.9 19.9 0 0 0 6-3c.5-5.2-.8-9.7-3.5-13.7ZM8.5 15.3c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4 2.1 1.1 2.1 2.4-.9 2.4-2.1 2.4Zm7 0c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4 2.1 1.1 2.1 2.4-.9 2.4-2.1 2.4Z"/></svg><span class="lbl">Iniciar con Discord</span></button>
-            <a class="btn lg ghost" data-scroll="unirte">Cómo unirme</a>
+            <a class="btn lg btn-wl" id="btn-wl-hero" href="/solicitud"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2.5"/><path d="M9 4.5V3h6v1.5M9 11h6M9 15h4"/></svg><span>Hacer la whitelist</span><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+            <button class="btn lg ghost discord" id="btn-login-hero" data-login><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.6 1.3a18.3 18.3 0 0 0-5.6 0L8.6 3a19.8 19.8 0 0 0-4.9 1.4C.6 9-.2 13.6.3 18.1a19.9 19.9 0 0 0 6 3l1.3-2.1c-.7-.3-1.4-.6-2-1l.5-.4a14.2 14.2 0 0 0 12.2 0l.5.4c-.6.4-1.3.7-2 1l1.3 2.1a19.9 19.9 0 0 0 6-3c.5-5.2-.8-9.7-3.5-13.7ZM8.5 15.3c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4 2.1 1.1 2.1 2.4-.9 2.4-2.1 2.4Zm7 0c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4 2.1 1.1 2.1 2.4-.9 2.4-2.1 2.4Z"/></svg><span class="lbl">Iniciar con Discord</span></button>
           </div>
+          <p class="wl-note"><span class="pulse" aria-hidden="true"></span>Whitelist abierta · 4 pasos, unos 5 minutos</p>
           <div class="socials">
             <a data-social="discord" aria-label="Discord"><svg class="ico" viewBox="0 0 24 24" fill="currentColor"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.6 1.3a18.3 18.3 0 0 0-5.6 0L8.6 3a19.8 19.8 0 0 0-4.9 1.4C.6 9-.2 13.6.3 18.1a19.9 19.9 0 0 0 6 3l1.3-2.1c-.7-.3-1.4-.6-2-1l.5-.4a14.2 14.2 0 0 0 12.2 0l.5.4c-.6.4-1.3.7-2 1l1.3 2.1a19.9 19.9 0 0 0 6-3c.5-5.2-.8-9.7-3.5-13.7ZM8.5 15.3c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4 2.1 1.1 2.1 2.4-.9 2.4-2.1 2.4Zm7 0c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4 2.1 1.1 2.1 2.4-.9 2.4-2.1 2.4Z"/></svg></a>
             <a data-social="youtube" aria-label="YouTube"><svg class="ico" viewBox="0 0 24 24" fill="currentColor"><path d="M23 7.2a3 3 0 0 0-2.1-2.1C19 4.6 12 4.6 12 4.6s-7 0-8.9.5A3 3 0 0 0 1 7.2 31 31 0 0 0 .5 12 31 31 0 0 0 1 16.8a3 3 0 0 0 2.1 2.1c1.9.5 8.9.5 8.9.5s7 0 8.9-.5a3 3 0 0 0 2.1-2.1c.4-1.6.5-4.8.5-4.8s0-3.2-.5-4.8ZM9.7 15V9l5.8 3-5.8 3Z"/></svg></a>
@@ -90,7 +91,7 @@
             <h3>Discord y <span>Whitelist</span></h3>
             <p>Entra al Discord e inicia sesión en la página web para loguearte y verificarte.</p>
             <div class="note">Necesitas una cuenta de Discord activa.</div>
-            <div class="step-btns"><a class="btn" href="/solicitud">Hacer la whitelist</a><a class="btn ghost" data-social="discord">Unirse al Discord</a></div>
+            <div class="step-btns"><a class="btn btn-wl" href="/solicitud"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2.5"/><path d="M9 4.5V3h6v1.5M9 11h6M9 15h4"/></svg><span>Hacer la whitelist</span></a><a class="btn ghost" data-social="discord">Unirse al Discord</a></div>
           </div>
         </div>
         <div class="step reveal">
@@ -208,6 +209,7 @@
     <button class="close" id="modal-close">Cerrar</button>
   </div>
 </div>
+<a class="btn btn-wl wl-float" id="wl-float" href="/solicitud" aria-hidden="true" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2.5"/><path d="M9 4.5V3h6v1.5M9 11h6M9 15h4"/></svg><span>Hacer la whitelist</span><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
 <div class="toast" id="toast"></div>
 
 </body>

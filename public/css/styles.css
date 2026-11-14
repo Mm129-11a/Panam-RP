@@ -36,6 +36,27 @@ header{position:sticky;top:0;z-index:40;background:rgba(6,10,20,.86);backdrop-fi
 .btn.ghost{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.16)}
 .btn.ghost:hover{background:rgba(58,106,240,.16);border-color:rgba(58,106,240,.6);box-shadow:none}
 .btn.lg{padding:16px 28px;font-size:17px}
+/* ── Botón de whitelist (el más llamativo de la web) ── */
+.btn-wl{position:relative;overflow:hidden;isolation:isolate;background:linear-gradient(135deg,#ff4651,#d81a24 55%,#9c0d16);font-family:var(--display);font-style:italic;font-weight:800;text-transform:uppercase;letter-spacing:.04em;animation:wlGlow 2.4s ease-in-out infinite}
+.btn-wl::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(110deg,transparent 35%,rgba(255,255,255,.38) 50%,transparent 65%);transform:translateX(-130%);animation:wlShine 3.4s ease-in-out infinite}
+.btn-wl:hover{background:linear-gradient(135deg,#ff5a64,#e8222d 55%,#a8101a);transform:translateY(-2px) scale(1.02)}
+.btn-wl svg{width:20px;height:20px;flex-shrink:0}
+.btn-wl .arrow{transition:transform .2s}
+.btn-wl:hover .arrow{transform:translateX(4px)}
+.btn.lg.btn-wl{padding:18px 30px;font-size:19px}
+@keyframes wlGlow{0%,100%{box-shadow:0 0 0 1px rgba(255,90,98,.55),0 10px 30px -8px rgba(224,38,47,.7)}50%{box-shadow:0 0 0 2px rgba(255,120,126,.9),0 0 38px 4px rgba(224,38,47,.55)}}
+@keyframes wlShine{0%,55%{transform:translateX(-130%)}100%{transform:translateX(130%)}}
+.btn.ghost.discord:hover{background:rgba(88,101,242,.18);border-color:rgba(88,101,242,.7)}
+.pulse{position:relative;width:9px;height:9px;border-radius:50%;background:#22c55e;flex-shrink:0}
+.pulse::after{content:"";position:absolute;inset:0;border-radius:50%;background:inherit;animation:wlPing 1.8s ease-out infinite}
+@keyframes wlPing{from{transform:scale(1);opacity:.8}to{transform:scale(2.6);opacity:0}}
+.wl-note{display:flex;align-items:center;gap:10px;margin:16px 0 0;color:#a7f3c4;font-size:14px;font-weight:600}
+.menu a.menu-wl{background:rgba(224,38,47,.16);border:1px solid rgba(255,90,98,.5);color:#fff;font-weight:700}
+.menu a.menu-wl:hover{background:rgba(224,38,47,.3)}
+.wl-float{position:fixed;right:24px;bottom:24px;z-index:80;opacity:0;transform:translateY(24px);pointer-events:none;transition:opacity .25s,transform .25s}
+.wl-float.show{opacity:1;transform:none;pointer-events:auto}
+.wl-float.show:hover{transform:translateY(-2px) scale(1.02)}
+@media (prefers-reduced-motion:reduce){.btn-wl,.btn-wl::after,.pulse::after{animation:none}.btn-wl{box-shadow:0 0 0 1px rgba(255,90,98,.55),0 10px 30px -8px rgba(224,38,47,.7)}}
 
 .userchip{display:flex;align-items:center;gap:10px;padding:5px 6px 5px 5px;border:1px solid var(--line);border-radius:999px;background:#0c1326}
 .userchip img{width:34px;height:34px;border-radius:50%;border:2px solid var(--blue2);object-fit:cover}
@@ -150,7 +171,14 @@ section.block.tight-top{padding-top:20px}
 .member{text-align:center;padding:34px 20px 28px;border-radius:24px;background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line);transition:transform .2s,border-color .2s}
 .member:hover{transform:translateY(-4px);border-color:rgba(58,106,240,.45)}
 .ring{width:118px;height:118px;margin:0 auto 18px;border-radius:50%;padding:4px;background:conic-gradient(from 180deg,var(--blue2) 0 50%,var(--red) 50% 100%)}
-.ring div{width:100%;height:100%;border-radius:50%;background:#0b1122;display:grid;place-items:center;font-size:50px}
+.ring{position:relative}
+.ring .pic{width:100%;height:100%;border-radius:50%;overflow:hidden;display:grid;background:radial-gradient(circle at 50% 38%,#22305c,#0b1122 72%)}
+.ring .pic>*{grid-area:1/1}
+.ring .pic img{width:100%;height:100%;object-fit:cover;animation:picIn .4s ease}
+.ring .ph{display:grid;place-items:center;font:800 italic 46px var(--display);color:#8ea6ff}
+.ring .badge{position:absolute;right:-4px;bottom:-2px;width:40px;height:40px;border-radius:50%;background:#0b1122;border:2px solid var(--line);display:grid;place-items:center;font-size:19px;line-height:1}
+@keyframes picIn{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.ring .pic img{animation:none}}
 .member h3{margin:0 0 10px;font-size:20px}
 .role{display:inline-block;padding:6px 14px;border-radius:999px;background:rgba(224,38,47,.14);color:var(--redtext);font-weight:700;font-size:13px}
 .member small{display:block;margin-top:16px;color:#56607a;letter-spacing:.24em;font-size:12px;font-weight:600}
@@ -215,12 +243,14 @@ footer{border-top:1px solid rgba(255,255,255,.06);background:var(--bg2)}
   .team{grid-template-columns:repeat(3,1fr)}
   .member{padding:26px 12px 22px}
   .ring{width:92px;height:92px}
-  .ring div{font-size:38px}
+  .ring .ph{font-size:36px}
+  .ring .badge{width:32px;height:32px;font-size:15px}
   .hero{padding:40px 0 56px}
   .hero-grid{grid-template-columns:1fr;text-align:center}
   .hero-visual{order:-1}
   .emblem{width:min(290px,72vw)}
   .eyebrow,.flagbar,.ctas,.socials{justify-content:center}
+  .wl-note{justify-content:center}
   .hero .tag{margin-left:auto;margin-right:auto}
   .stats-band{grid-template-columns:1fr;margin-top:40px}
   .sb + .sb{border-left:none;border-top:1px solid var(--line)}
@@ -248,7 +278,8 @@ footer{border-top:1px solid rgba(255,255,255,.06);background:var(--bg2)}
   .team{grid-template-columns:1fr;gap:12px}
   .member{display:flex;align-items:center;gap:18px;text-align:left;padding:18px 20px}
   .ring{width:76px;height:76px;margin:0;flex-shrink:0}
-  .ring div{font-size:32px}
+  .ring .ph{font-size:30px}
+  .ring .badge{width:28px;height:28px;font-size:13px;right:-4px;bottom:-4px}
   .member h3{margin-bottom:8px}
   .member small{margin-top:8px}
   .notice{flex-direction:column;text-align:center}
@@ -362,4 +393,11 @@ textarea.ap-input{min-height:112px;resize:vertical;line-height:1.5}
   .ap-steps li{font-size:11px}
   .ap-h{font-size:26px}
   .ap-inline{flex-direction:column}
+}
+@media (max-width:600px){
+  .hero .ctas{flex-direction:column;align-items:stretch}
+  .hero .ctas .btn{width:100%}
+  .btn.lg.btn-wl{font-size:18px;padding:18px 20px}
+  .wl-float{left:14px;right:14px;bottom:14px;justify-content:center;padding:16px 18px;font-size:17px}
+  footer{padding-bottom:84px}
 }

@@ -12,10 +12,11 @@ const CONFIG = {
     { cls: 'tra', img: '', label: 'Policía de Tránsito', icon: '🚓', color: '#7aa2ff', desc: 'Controla el tráfico y la seguridad vial.' },
     { cls: 'rp', img: '', label: 'Rol libre', icon: '🌃', color: '#b28cff', desc: 'Vive tu propia historia en la ciudad.' },
   ],
+  // roblox: usuario de Roblox (su avatar se pone solo)
   team: [
-    { name: 'kalevft26', role: 'Fundador', icon: '👑' },
-    { name: 'Por asignar', role: 'Co-Fundador', icon: '🛡️' },
-    { name: 'Por asignar', role: 'Developer', icon: '💻' },
+    { roblox: '003evamm', role: 'Fundador', icon: '👑' },
+    { roblox: 'Elpanaboy_19', role: 'Co-Fundador', icon: '🛡️' },
+    { roblox: 'Bancodemm1', role: 'Developer', icon: '💻' },
   ],
   rules: [
     ['Respeto ante todo', 'Trata a todos con respeto dentro y fuera del rol. Insultos, discriminación o toxicidad se sancionan.'],
@@ -61,12 +62,34 @@ $$('[data-panel]').forEach((p, i) => {
 });
 
 $('#team').innerHTML = CONFIG.team.map((m,i)=>`
-  <div class="member reveal">
-    <div class="ring"><div>${m.icon}</div></div>
-    <div class="mtext"><h3>${esc(m.name)}</h3>
+  <div class="member reveal" data-rbx="${esc(m.roblox)}">
+    <div class="ring"><div class="pic"><span class="ph">${esc(m.roblox.charAt(0).toUpperCase())}</span></div><span class="badge" aria-hidden="true">${m.icon}</span></div>
+    <div class="mtext"><h3>${esc(m.roblox)}</h3>
     <span class="role">${esc(m.role)}</span>
     <small>#${String(i+1).padStart(3,'0')}</small></div>
   </div>`).join('');
+
+// Avatares de Roblox del equipo (los pide el servidor; aquí solo se muestran si cargan bien)
+(async function loadTeamAvatars(){
+  const names = CONFIG.team.map(m => m.roblox).filter(Boolean);
+  if (!names.length) return;
+  try {
+    const r = await fetch('/api/roblox/avatares?usuarios=' + encodeURIComponent(names.join(',')));
+    if (!r.ok) return;
+    const { users } = await r.json();
+    $$('[data-rbx]').forEach(card => {
+      const u = users && users[card.dataset.rbx.toLowerCase()];
+      if (!u) return;
+      $('h3', card).textContent = u.name;
+      if (!u.avatar) return;
+      const img = new Image();
+      img.alt = 'Avatar de ' + u.name;
+      img.decoding = 'async';
+      img.addEventListener('load', () => $('.pic', card).append(img));
+      img.src = u.avatar;
+    });
+  } catch { /* sin avatares queda la inicial */ }
+})();
 
 $('#rules').innerHTML = CONFIG.rules.map(([t,d],i)=>`<div class="rule"><div class="n">${String(i+1).padStart(2,'0')}</div><div><h3>${esc(t)}</h3><p>${esc(d)}</p></div></div>`).join('');
 $('#shop').innerHTML = CONFIG.shop.map(p=>`<div class="product ${p.featured?'featured':''}"><div class="emoji">${p.emoji}</div><h3>${esc(p.name)}</h3><div class="price">${esc(p.price)}</div><ul>${p.perks.map(x=>`<li>${esc(x)}</li>`).join('')}</ul><button class="btn" data-buy="${esc(p.name)}">Comprar</button></div>`).join('');
@@ -162,3 +185,11 @@ if(q){
   else if(q==='guild') openModal('Únete al Discord primero','Para iniciar sesión debes ser miembro del servidor de Discord de Panamá RP.');
   else openModal('No se pudo iniciar sesión','Ocurrió un error al conectar con Discord. Inténtalo de nuevo.');
 }
+
+// Botón flotante de whitelist: aparece cuando ya no se ve el del inicio
+(function wlFloat(){
+  const fl = $('#wl-float'), hero = $('#btn-wl-hero');
+  if (!fl || !hero || !('IntersectionObserver' in window)) return;
+  const set = (on) => { fl.classList.toggle('show', on); fl.setAttribute('aria-hidden', String(!on)); fl.tabIndex = on ? 0 : -1; };
+  new IntersectionObserver(([en]) => set(!en.isIntersecting)).observe(hero);
+})();

@@ -167,7 +167,7 @@ app.get('/api/solicitud/preguntas', apiLimit, (req, res) => {
 const ROBLOX_IMG_RE = /^https:\/\/[a-z0-9-]+\.rbxcdn\.com\/[\w\-./%]+$/i;
 async function robloxHeadshot(id) {
   try {
-    const r = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${id}&size=150x150&format=Png&isCircular=false`, {
+    const r = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${id}&size=420x420&format=Png&isCircular=false`, {
       signal: AbortSignal.timeout(5000),
     });
     if (!r.ok) return null;
@@ -210,6 +210,21 @@ app.get('/api/roblox', robloxLimit, noStore, async (req, res) => {
     console.error('[roblox]', err.message);
     res.status(502).json({ error: 'Roblox no respondió. Intenta de nuevo.' });
   }
+});
+
+// Avatares para la sección de equipo (hasta 6 usuarios por consulta, con la misma caché)
+app.get('/api/roblox/avatares', apiLimit, async (req, res) => {
+  const raw = typeof req.query.usuarios === 'string' ? req.query.usuarios : '';
+  const names = [...new Set(raw.split(',').map((n) => n.trim()).filter(Boolean))];
+  if (!names.length || names.length > 6 || !names.every((n) => ROBLOX_USER_RE.test(n))) {
+    return res.status(400).json({ error: 'Usuarios inválidos.' });
+  }
+  const users = {};
+  await Promise.all(names.map(async (n) => {
+    try { users[n.toLowerCase()] = await lookupRoblox(n); } catch { users[n.toLowerCase()] = null; }
+  }));
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.json({ users });
 });
 
 app.post('/api/solicitud', submitLimit, noStore, express.json({ limit: '20kb' }), async (req, res) => {
