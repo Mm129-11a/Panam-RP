@@ -11,6 +11,9 @@ import {
 import {
   OPTIONS, publicSections, validateApplication, scoreApplication, buildWebhookPayload, ROBLOX_USER_RE, WEBHOOK_RE,
 } from './lib/whitelist.js';
+import {
+  BOT_PERMISSIONS, BOT_TOKEN_RE, createDiscordBot, decide, decisionDm, publicKeyFromHex, reviewComponents, touchGateway, verifyInteraction,
+} from './lib/review.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -32,6 +35,12 @@ const API = 'https://discord.com/api/v10';
 const OAUTH_MAX_AGE = 10 * 60 * 1000; // el intento de login caduca a los 10 minutos
 // Canal de Discord donde llegan las solicitudes de whitelist (webhook del canal).
 const WEBHOOK_URL = WEBHOOK_RE.test(process.env.WHITELIST_WEBHOOK_URL || '') ? process.env.WHITELIST_WEBHOOK_URL : '';
+// Botones Aceptar/Rechazar: el bot de la misma app publica la solicitud y Discord nos avisa de cada clic.
+const BOT_TOKEN_RAW = (process.env.DISCORD_BOT_TOKEN || '').trim();
+const BOT_TOKEN = BOT_TOKEN_RE.test(BOT_TOKEN_RAW) ? BOT_TOKEN_RAW : '';
+const PUBLIC_KEY = publicKeyFromHex(process.env.DISCORD_PUBLIC_KEY || '');
+const WHITELIST_ROLE = (process.env.WHITELIST_ROLE || '').trim(); // nombre o ID del rol que se da al aceptar
+const STAFF_ROLES = (process.env.STAFF_ROLES || '').split(',').map((r) => r.trim()).filter(Boolean);
 const RESUBMIT_WAIT = 24 * 60 * 60 * 1000; // una solicitud cada 24 h por cuenta
 // Páginas a las que se puede volver tras iniciar sesión (lista cerrada: evita redirecciones a otras webs).
 const RETURN_PATHS = ['/', '/solicitud'];
@@ -53,7 +62,7 @@ const ipOf = (req) => {
   return ip;
 };
 app.use(securityHeaders({ https: HTTPS }));
-app.use(methodGuard(['/logout', '/api/solicitud']));
+app.use(methodGuard(['/logout', '/api/solicitud', '/api/discord/interactions']));
 app.use(rateLimit({ windowMs: 60_000, max: 300, keyFn: ipOf }));
 
 const authLimit = rateLimit({
@@ -79,6 +88,7 @@ app.use(cookieSession({
 
 const loginConfigured = () => Boolean(CLIENT_ID && CLIENT_SECRET);
 const discordFetch = (url, opts = {}) => fetch(url, { ...opts, signal: AbortSignal.timeout(8000) });
+const bot = BOT_TOKEN ? createDiscordBot({ token: BOT_TOKEN, apiBase: API }) : null;
 
 // ─── Inicio de sesión con Discord ───
 app.get('/auth/discord', authLimit, noStore, (req, res) => {
@@ -227,6 +237,43 @@ app.get('/api/roblox/avatares', apiLimit, async (req, res) => {
   res.json({ users });
 });
 
+// Canal de las solicitudes: el mismo del webhook (Discord lo dice al consultar el webhook).
+let reviewChannel = null;
+async function getReviewChannel() {
+  if (reviewChannel) return reviewChannel;
+  const r = await discordFetch(WEBHOOK_URL);
+  if (!r.ok) throw new Error(`no se pudo leer el webhook (${r.status})`);
+  const d = await r.json();
+  if (!/^\d{5,25}$/.test(d?.channel_id || '')) throw new Error('el webhook no tiene canal');
+  reviewChannel = { channelId: d.channel_id, guildId: d.guild_id || GUILD_ID };
+  return reviewChannel;
+}
+
+// Publica la solicitud. Con bot lleva botones; si el bot falla, se manda igual por el webhook (sin botones).
+async function sendApplication(payload, applicantId) {
+  if (bot) {
+    try {
+      const { channelId } = await getReviewChannel();
+      const { username, ...message } = payload;
+      const r = await bot.postMessage(channelId, { ...message, components: reviewComponents(applicantId) });
+      if (r.ok) return 'bot';
+      const why = r.code === 50001 || r.code === 50013 ? 'el bot no puede ver o escribir en ese canal: añádelo al canal'
+        : r.status === 401 ? 'DISCORD_BOT_TOKEN no es válido' : `error ${r.status}${r.code ? ` código ${r.code}` : ''}`;
+      console.error(`[solicitud] el bot no pudo publicar (${why}); se usó el webhook sin botones`);
+    } catch (err) {
+      console.error('[solicitud] canal de solicitudes:', err.message);
+    }
+  }
+  const r = await fetch(`${WEBHOOK_URL}?wait=true`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!r.ok) throw new Error(`webhook ${r.status}`);
+  return 'webhook';
+}
+
 app.post('/api/solicitud', submitLimit, noStore, express.json({ limit: '20kb' }), async (req, res) => {
   if (!isSameOrigin(req, ORIGIN)) return res.status(403).json({ error: 'Solicitud no permitida.' });
   if (!loginConfigured()) return res.status(403).json({ error: 'Esto es una vista previa: el inicio de sesión aún no está activado.' });
@@ -242,13 +289,7 @@ app.post('/api/solicitud', submitLimit, noStore, express.json({ limit: '20kb' })
     const roblox = await lookupRoblox(data.roblox); // se vuelve a comprobar aquí: no se confía en el navegador
     if (!roblox) return res.status(400).json({ error: 'Revisa los campos marcados.', errors: { roblox: 'No existe ese usuario en Roblox.' } });
     const payload = buildWebhookPayload({ user, roblox, data, score: scoreApplication(data.respuestas) });
-    const r = await fetch(`${WEBHOOK_URL}?wait=true`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!r.ok) throw new Error(`webhook ${r.status}`);
+    await sendApplication(payload, user.id);
     req.session.submittedAt = Date.now();
     res.json({ ok: true });
   } catch (err) {
@@ -290,6 +331,78 @@ app.get('/api/stats', apiLimit, async (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=60');
   res.json({ members: stats.members, online: stats.online, invite: `https://discord.gg/${INVITE_CODE}` });
 });
+// ─── Clics en Aceptar / Rechazar (Discord los manda aquí, firmados) ───
+async function staffRoleIds(guildId) {
+  if (!STAFF_ROLES.length) return [];
+  if (bot) return bot.resolveRoles(guildId, STAFF_ROLES);
+  return STAFF_ROLES.filter((r) => /^\d{5,25}$/.test(r));
+}
+
+async function applyDecision(effect, interaction) {
+  const problems = [];
+  if (!bot) {
+    problems.push('Falta DISCORD_BOT_TOKEN en Render: no pude dar el rol ni avisarle por MD.');
+  } else {
+    if (effect.kind === 'accept') {
+      if (!WHITELIST_ROLE) {
+        problems.push('No hay rol configurado (WHITELIST_ROLE en Render), así que no le di ningún rol.');
+      } else {
+        const [roleId] = await bot.resolveRoles(effect.guildId, [WHITELIST_ROLE]);
+        if (!roleId) {
+          problems.push(`No encontré el rol «${WHITELIST_ROLE}». Revisa WHITELIST_ROLE en Render.`);
+        } else {
+          const r = await bot.addRole(effect.guildId, effect.applicantId, roleId, `Whitelist aceptada por ${effect.staffName}`);
+          if (!r.ok) {
+            problems.push(r.code === 10007 ? 'La persona ya no está en el servidor: no pude darle el rol.'
+              : r.code === 50013 ? 'No pude dar el rol: en Ajustes del servidor → Roles, sube el rol del bot por encima del rol de whitelist.'
+                : `No pude dar el rol (error ${r.status}).`);
+          }
+        }
+      }
+    }
+    const dm = await bot.dm(effect.applicantId, decisionDm({ kind: effect.kind, motivo: effect.motivo, siteUrl: BASE_URL }));
+    if (!dm.ok) problems.push(dm.code === 50007 ? 'No pude avisarle por MD (tiene los mensajes privados cerrados).' : `No pude avisarle por MD (error ${dm.status}).`);
+  }
+  if (!problems.length) return;
+  console.error('[revisión]', problems.join(' | '));
+  const appId = /^\d{5,25}$/.test(interaction.application_id || '') ? interaction.application_id : CLIENT_ID;
+  if (!appId || typeof interaction.token !== 'string') return;
+  await discordFetch(`${API}/webhooks/${appId}/${encodeURIComponent(interaction.token)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: `⚠️ ${problems.join('\n')}`, flags: 64, allowed_mentions: { parse: [] } }),
+  }).catch(() => {});
+}
+
+app.post('/api/discord/interactions', express.raw({ type: () => true, limit: '200kb' }), async (req, res) => {
+  if (!PUBLIC_KEY) return res.status(503).json({ error: 'Falta DISCORD_PUBLIC_KEY.' });
+  const valid = verifyInteraction({
+    key: PUBLIC_KEY,
+    signature: req.get('x-signature-ed25519'),
+    timestamp: req.get('x-signature-timestamp'),
+    body: req.body,
+  });
+  if (!valid) return res.status(401).json({ error: 'Firma inválida.' });
+  let interaction;
+  try { interaction = JSON.parse(req.body.toString('utf8')); } catch { return res.status(400).json({ error: 'JSON inválido.' }); }
+
+  let roles = [];
+  if (interaction.type !== 1 && interaction.guild_id) {
+    try { roles = await staffRoleIds(interaction.guild_id); } catch { roles = []; }
+  }
+  const { response, effect } = decide(interaction, { staffRoleIds: roles });
+  res.json(response); // Discord exige respuesta en menos de 3 s; lo demás va después
+  if (effect) applyDecision(effect, interaction).catch((err) => console.error('[revisión]', err.message));
+});
+
+// Enlace corto para añadir el bot al servidor con los permisos justos.
+app.get('/bot/invitar', (req, res) => {
+  if (!CLIENT_ID) return res.redirect('/');
+  const q = new URLSearchParams({ client_id: CLIENT_ID, scope: 'bot', permissions: BOT_PERMISSIONS });
+  if (GUILD_ID) { q.set('guild_id', GUILD_ID); q.set('disable_guild_select', 'true'); }
+  res.redirect(`https://discord.com/oauth2/authorize?${q}`);
+});
+
 app.use('/api', (req, res) => res.status(404).json({ error: 'no_encontrado' }));
 
 app.get('/healthz', (req, res) => res.type('text').send('ok'));
@@ -319,4 +432,11 @@ app.listen(PORT, () => {
   console.log(loginConfigured() ? 'Login con Discord: activo' : 'Login con Discord: falta DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET');
   console.log(`Redirect URI para Discord: ${REDIRECT_URI}`);
   console.log(WEBHOOK_URL ? 'Solicitudes de whitelist: activas' : 'Solicitudes de whitelist: falta WHITELIST_WEBHOOK_URL');
+  const missing = [!BOT_TOKEN && 'DISCORD_BOT_TOKEN', !PUBLIC_KEY && 'DISCORD_PUBLIC_KEY'].filter(Boolean);
+  console.log(missing.length ? `Botones Aceptar/Rechazar: falta ${missing.join(' y ')}` : 'Botones Aceptar/Rechazar: activos');
+  if (BOT_TOKEN_RAW && !BOT_TOKEN) console.log('DISCORD_BOT_TOKEN no tiene el formato de un token de bot.');
+  if (process.env.DISCORD_PUBLIC_KEY && !PUBLIC_KEY) console.log('DISCORD_PUBLIC_KEY no es válida (deben ser 64 caracteres).');
+  console.log(`Interactions Endpoint URL: ${BASE_URL}/api/discord/interactions`);
+  console.log(`Rol al aceptar: ${WHITELIST_ROLE || 'ninguno (falta WHITELIST_ROLE)'}`);
+  if (bot) touchGateway(BOT_TOKEN).then((r) => console.log(r.ok ? 'Bot de Discord: conectado' : `Bot de Discord: no se pudo conectar (${r.reason})`));
 });

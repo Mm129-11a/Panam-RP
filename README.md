@@ -11,6 +11,11 @@ Web del servidor Panamá RP (ER:LC) con inicio de sesión de Discord y contadore
 | `SESSION_SECRET` | Texto aleatorio de 32+ caracteres para firmar la sesión (obligatorio en producción) |
 | `DISCORD_INVITE_CODE` | Código de invitación (por defecto `fgRGQPbJF3`) |
 | `DISCORD_GUILD_ID` | *(opcional)* solo deja entrar a miembros de tu servidor |
+| `WHITELIST_WEBHOOK_URL` | Webhook del canal donde llegan las solicitudes |
+| `DISCORD_BOT_TOKEN` | Token del bot de la misma app (Bot → Reset Token): publica las solicitudes con botones Aceptar/Rechazar |
+| `DISCORD_PUBLIC_KEY` | Public Key de la app (General Information). Además pon `https://TU-WEB/api/discord/interactions` en *Interactions Endpoint URL* |
+| `WHITELIST_ROLE` | Nombre o ID del rol que se da al aceptar (ej. `Ciudadano`). El rol del bot debe estar por encima |
+| `STAFF_ROLES` | *(opcional)* roles que pueden revisar, separados por comas. Si no se pone: admins y quien pueda gestionar roles |
 | `NODE_VERSION` | `24` |
 | `NODE_ENV` | `production` |
 
@@ -41,3 +46,12 @@ Toda la lógica está en `lib/security.js` y se prueba con `npm test`.
   constante; se validan todos los datos que devuelve Discord; las llamadas tienen tiempo límite.
 - **Cerrar sesión** solo por POST desde la propia web (otra web no puede desconectarte).
 - Solo se aceptan GET/HEAD (y el POST de cerrar sesión); los errores no muestran detalles.
+
+## Botones de la whitelist
+
+1. Pon `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY` y `WHITELIST_ROLE` en Render y despliega.
+2. Abre `https://TU-WEB/bot/invitar` para añadir el bot al servidor.
+3. Sube el rol del bot por encima del rol de whitelist y, si el canal de solicitudes es privado, añade el bot a ese canal.
+4. En el portal de Discord, *Interactions Endpoint URL* = `https://TU-WEB/api/discord/interactions` (abre la web antes para que esté despierta).
+
+Si el bot no puede publicar, la solicitud llega igual por el webhook, pero sin botones (el motivo sale en los logs).
