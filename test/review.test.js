@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import {
-  discordRequest, describeLimit, publicKeyFromHex, verifyInteraction, decide, isStaff, reviewComponents, decisionDm, createDiscordBot, BOT_PERMISSIONS, BOT_TOKEN_RE,
+  matchRole, normRoleName, discordRequest, describeLimit, publicKeyFromHex, verifyInteraction, decide, isStaff, reviewComponents, decisionDm, createDiscordBot, BOT_PERMISSIONS, BOT_TOKEN_RE,
 } from '../lib/review.js';
 
 const NOW = 1_763_600_000_000;
@@ -194,4 +194,15 @@ test('si Discord pide esperar poco se reintenta; si es un bloqueo largo, no', as
 
   const down = await discordRequest(async () => { throw new Error('sin red'); }, 'https://x');
   assert.equal(down.status, 0);
+});
+
+test('encuentra el rol aunque tenga emojis, signos o un punto de más', () => {
+  const roles = [{ id: '0', name: '@everyone' }, { id: '1', name: '🪪 | Ciudadano Registrado' }, { id: '2', name: 'Staff' }, { id: '3', name: 'Policía Nacional' }, { id: '4', name: 'Policía Municipal' }];
+  assert.equal(matchRole(roles, 'Ciudadano Registrado.')?.id, '1');
+  assert.equal(matchRole(roles, 'ciudadano registrado')?.id, '1');
+  assert.equal(matchRole(roles, 'CIUDADANO')?.id, '1', 'parte del nombre si solo hay uno');
+  assert.equal(matchRole(roles, 'policia nacional')?.id, '3');
+  assert.equal(matchRole(roles, 'policia'), null, 'si hay dos parecidos no adivina');
+  assert.equal(matchRole(roles, '...'), null);
+  assert.equal(normRoleName('🪪 Ciudadano  Registrado.'), 'ciudadano registrado');
 });

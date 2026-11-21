@@ -443,7 +443,8 @@ async function applyDecision(effect, interaction) {
       } else {
         const [roleId] = await bot.resolveRoles(effect.guildId, [WHITELIST_ROLE]);
         if (!roleId) {
-          problems.push(`No encontré el rol «${WHITELIST_ROLE}». Revisa WHITELIST_ROLE en Render.`);
+          const names = bot.roleNames(effect.guildId).slice(0, 25);
+          problems.push(`No encontré el rol «${WHITELIST_ROLE}». Revisa WHITELIST_ROLE en Render.${names.length ? ` Roles del servidor: ${names.join(', ')}` : ''}`);
         } else {
           const r = await bot.addRole(effect.guildId, effect.applicantId, roleId, `Whitelist aceptada por ${effect.staffName}`);
           if (!r.ok) {
