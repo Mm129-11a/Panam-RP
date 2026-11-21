@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import {
-  publicKeyFromHex, verifyInteraction, decide, isStaff, reviewComponents, decisionDm, createDiscordBot, BOT_PERMISSIONS, BOT_TOKEN_RE,
+  discordRequest, describeLimit, publicKeyFromHex, verifyInteraction, decide, isStaff, reviewComponents, decisionDm, createDiscordBot, BOT_PERMISSIONS, BOT_TOKEN_RE,
 } from '../lib/review.js';
 
 const NOW = 1_763_600_000_000;
@@ -135,10 +135,10 @@ test('el bot llama a las rutas correctas de Discord', async () => {
   const calls = [];
   const fakeFetch = async (url, opts) => {
     calls.push({ url, ...opts });
-    const json = (status, body) => ({ ok: status < 300, status, json: async () => body });
+    const json = (status, body) => ({ ok: status < 300, status, headers: new Headers(), text: async () => JSON.stringify(body) });
     if (url.endsWith('/roles') && opts.method === 'GET') return json(200, [{ id: '111', name: 'Ciudadano' }, { id: '222', name: 'Staff Panamá' }]);
     if (url.endsWith('/users/@me/channels')) return json(200, { id: '333' });
-    if (url.includes('/members/') && opts.method === 'PUT') return { ok: true, status: 204, json: async () => null };
+    if (url.includes('/members/') && opts.method === 'PUT') return { ok: true, status: 204, headers: new Headers(), text: async () => '' };
     return json(200, { id: '1' });
   };
   const b = createDiscordBot({ token: 'T.O.K', apiBase: 'https://x/api', fetchImpl: fakeFetch });
@@ -166,4 +166,32 @@ test('el bot llama a las rutas correctas de Discord', async () => {
   const res = await down.postMessage('1', {});
   assert.equal(res.ok, false);
   assert.equal(res.status, 0);
+});
+
+test('si Discord pide esperar poco se reintenta; si es un bloqueo largo, no', async () => {
+  const res429 = (body, headers = {}) => ({ ok: false, status: 429, headers: new Headers(headers), text: async () => (typeof body === 'string' ? body : JSON.stringify(body)) });
+  const ok = { ok: true, status: 200, headers: new Headers(), text: async () => '{"id":"9"}' };
+
+  let n = 0;
+  const flaky = async () => (++n === 1 ? res429({ message: 'You are being rate limited.', retry_after: 0.05, global: false }) : ok);
+  const r1 = await discordRequest(flaky, 'https://x');
+  assert.equal(r1.ok, true);
+  assert.equal(n, 2, 'reintentó una vez');
+
+  n = 0;
+  const long = async () => { n++; return res429({ retry_after: 120, global: true }, { 'x-ratelimit-scope': 'shared' }); };
+  const r2 = await discordRequest(long, 'https://x');
+  assert.equal(n, 1, 'no espera 2 minutos dentro de la petición');
+  assert.equal(r2.status, 429);
+  assert.equal(describeLimit(r2.limit), 'límite global, tipo shared, esperar 120s');
+
+  n = 0;
+  const banned = async () => { n++; return res429('error code: 1015', { 'retry-after': '1' }); };
+  const r3 = await discordRequest(banned, 'https://x');
+  assert.equal(n, 1);
+  assert.equal(r3.limit.cloudflare, true);
+  assert.match(describeLimit(r3.limit), /Cloudflare/);
+
+  const down = await discordRequest(async () => { throw new Error('sin red'); }, 'https://x');
+  assert.equal(down.status, 0);
 });
