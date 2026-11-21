@@ -44,6 +44,7 @@ const WHITELIST_ROLE = (process.env.WHITELIST_ROLE || '').trim(); // nombre o ID
 const CHANNEL_ID = /^\d{5,25}$/.test(process.env.WHITELIST_CHANNEL_ID || '') ? process.env.WHITELIST_CHANNEL_ID : ''; // opcional
 const STAFF_ROLES = (process.env.STAFF_ROLES || '').split(',').map((r) => r.trim()).filter(Boolean);
 const RESUBMIT_WAIT = 24 * 60 * 60 * 1000;
+const HOME_GUILD = GUILD_ID || '1560736880478130178'; // servidor de Discord de Panamá RP
 // Puente a Discord (otro servicio en otra región) para cuando Discord bloquea la IP de Render.
 const RELAY_URL = /^https?:\/\/[\w.-]+(:\d+)?$/.test((process.env.RELAY_URL || '').replace(/\/$/, '')) ? process.env.RELAY_URL.replace(/\/$/, '') : '';
 const RELAY_SECRET = process.env.RELAY_SECRET || ''; // una solicitud cada 24 h por cuenta
@@ -186,8 +187,32 @@ function queuedState(req) {
   return deliveredFromQueue.has(id) ? 'entregada' : 'perdida';
 }
 const recentlySubmitted = (req) => sentRecently(req) || ['pendiente', 'entregada'].includes(queuedState(req));
-app.get('/api/me', apiLimit, noStore, (req, res) => {
-  res.json({ user: req.session?.user || null, loginEnabled: loginConfigured(), submitted: recentlySubmitted(req) });
+// ¿Ya tiene la whitelist? Se mira en Discord si tiene el rol (WHITELIST_ROLE). Se guarda 1–10 min.
+const wlCache = new Map();
+async function whitelistStatus(userId) {
+  if (!bot || !WHITELIST_ROLE || !userId) return null;
+  const hit = wlCache.get(userId);
+  if (hit && Date.now() < hit.until) return hit.status;
+  let status = null;
+  try {
+    const [roleId] = await bot.resolveRoles(HOME_GUILD, [WHITELIST_ROLE]);
+    if (roleId) {
+      const r = await bot.call('GET', `/guilds/${HOME_GUILD}/members/${userId}`);
+      if (r.ok && Array.isArray(r.data?.roles)) status = r.data.roles.includes(roleId) ? 'aceptada' : 'sin_rol';
+      else if (r.code === 10007) status = 'fuera_del_servidor';
+    }
+  } catch {
+    status = null;
+  }
+  if (wlCache.size > 5000) wlCache.clear();
+  wlCache.set(userId, { status, until: Date.now() + (status === 'aceptada' ? 10 : 1) * 60_000 });
+  return status;
+}
+
+app.get('/api/me', apiLimit, noStore, async (req, res) => {
+  const user = req.session?.user || null;
+  const whitelist = user ? await whitelistStatus(user.id) : null;
+  res.json({ user, loginEnabled: loginConfigured(), submitted: recentlySubmitted(req), whitelist });
 });
 
 // ─── Solicitud de whitelist ───
@@ -365,6 +390,7 @@ app.post('/api/solicitud', submitLimit, noStore, express.json({ limit: '20kb' })
   const user = req.session?.user;
   if (!user) return res.status(401).json({ error: 'Inicia sesión con Discord para enviar.' });
   if (recentlySubmitted(req)) return res.status(409).json({ error: 'Ya enviaste una solicitud. Espera la respuesta del staff.' });
+  if ((await whitelistStatus(user.id)) === 'aceptada') return res.status(409).json({ error: 'Ya tienes la whitelist aceptada.', aceptada: true });
   if (!WEBHOOK_URL) return res.status(503).json({ error: 'El staff aún no activó la recepción de solicitudes.' });
 
   const { ok, errors, data } = validateApplication(req.body);
@@ -458,6 +484,9 @@ async function applyDecision(effect, interaction) {
     const dm = await bot.dm(effect.applicantId, decisionDm({ kind: effect.kind, motivo: effect.motivo, siteUrl: BASE_URL }));
     if (!dm.ok) problems.push(dm.code === 50007 ? 'No pude avisarle por MD (tiene los mensajes privados cerrados).' : `No pude avisarle por MD (error ${dm.status}).`);
   }
+  if (effect.kind === 'accept' && !problems.some((p) => p.includes('rol'))) wlCache.set(effect.applicantId, { status: 'aceptada', until: Date.now() + 10 * 60_000 });
+  else wlCache.delete(effect.applicantId);
+  console.log(`[revisión] solicitud de ${effect.applicantId} ${effect.kind === 'accept' ? 'aceptada' : 'rechazada'} por ${effect.staffName || effect.staffId}${problems.length ? ' (con avisos)' : ': rol y mensaje privado OK'}`);
   if (!problems.length) return;
   console.error('[revisión]', problems.join(' | '));
   const appId = /^\d{5,25}$/.test(interaction.application_id || '') ? interaction.application_id : CLIENT_ID;
