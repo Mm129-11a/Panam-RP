@@ -55,3 +55,12 @@ Toda la lógica está en `lib/security.js` y se prueba con `npm test`.
 4. En el portal de Discord, *Interactions Endpoint URL* = `https://TU-WEB/api/discord/interactions` (abre la web antes para que esté despierta).
 
 Si el bot no puede publicar, la solicitud llega igual por el webhook, pero sin botones (el motivo sale en los logs).
+
+## Puente a Discord (cuando Discord bloquea la IP de Render)
+
+Render gratis comparte su IP con muchos servicios y Discord a veces la bloquea horas (error 1015).
+`relay.js` es un servicio aparte, en otra región, que hace las peticiones a Discord desde su propia IP.
+
+- Servicio del puente: start `node relay.js`, variable `RELAY_SECRET` (32+ caracteres).
+- Servicio principal: `RELAY_URL` (URL del puente) y el mismo `RELAY_SECRET`.
+- El puente no guarda tokens: solo reenvía peticiones firmadas a `https://discord.com/api/`.

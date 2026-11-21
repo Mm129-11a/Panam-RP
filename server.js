@@ -14,6 +14,7 @@ import {
 import {
   BOT_PERMISSIONS, BOT_TOKEN_RE, createDiscordBot, describeLimit, discordRequest, decide, decisionDm, publicKeyFromHex, reviewComponents, touchGateway, verifyInteraction,
 } from './lib/review.js';
+import { createRelayFetch, createSmartFetch } from './lib/relay.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -42,7 +43,10 @@ const PUBLIC_KEY = publicKeyFromHex(process.env.DISCORD_PUBLIC_KEY || '');
 const WHITELIST_ROLE = (process.env.WHITELIST_ROLE || '').trim(); // nombre o ID del rol que se da al aceptar
 const CHANNEL_ID = /^\d{5,25}$/.test(process.env.WHITELIST_CHANNEL_ID || '') ? process.env.WHITELIST_CHANNEL_ID : ''; // opcional
 const STAFF_ROLES = (process.env.STAFF_ROLES || '').split(',').map((r) => r.trim()).filter(Boolean);
-const RESUBMIT_WAIT = 24 * 60 * 60 * 1000; // una solicitud cada 24 h por cuenta
+const RESUBMIT_WAIT = 24 * 60 * 60 * 1000;
+// Puente a Discord (otro servicio en otra región) para cuando Discord bloquea la IP de Render.
+const RELAY_URL = /^https?:\/\/[\w.-]+(:\d+)?$/.test((process.env.RELAY_URL || '').replace(/\/$/, '')) ? process.env.RELAY_URL.replace(/\/$/, '') : '';
+const RELAY_SECRET = process.env.RELAY_SECRET || ''; // una solicitud cada 24 h por cuenta
 // Páginas a las que se puede volver tras iniciar sesión (lista cerrada: evita redirecciones a otras webs).
 const RETURN_PATHS = ['/', '/solicitud'];
 
@@ -88,8 +92,15 @@ app.use(cookieSession({
 }));
 
 const loginConfigured = () => Boolean(CLIENT_ID && CLIENT_SECRET);
-const discordFetch = (url, opts = {}) => fetch(url, { ...opts, signal: AbortSignal.timeout(8000) });
-const bot = BOT_TOKEN ? createDiscordBot({ token: BOT_TOKEN, apiBase: API }) : null;
+const relay = RELAY_URL && RELAY_SECRET.length >= 32 ? createRelayFetch({ relayUrl: RELAY_URL, secret: RELAY_SECRET }) : null;
+// Todas las llamadas a Discord pasan por aquí: directo y, si la IP está bloqueada, por el puente.
+const dfetch = createSmartFetch({
+  direct: fetch,
+  relay,
+  onBan: () => console.log('[puente] Discord bloquea la IP principal: se usa el puente durante 10 min'),
+});
+const discordFetch = (url, opts = {}) => dfetch(url, { ...opts, signal: AbortSignal.timeout(8000) });
+const bot = BOT_TOKEN ? createDiscordBot({ token: BOT_TOKEN, apiBase: API, fetchImpl: dfetch }) : null;
 
 // ─── Inicio de sesión con Discord ───
 app.get('/auth/discord', authLimit, noStore, (req, res) => {
@@ -163,7 +174,18 @@ app.post('/logout', noStore, (req, res) => {
 app.get('/logout', (req, res) => res.redirect('/'));
 
 // ─── API ───
-const recentlySubmitted = (req) => Date.now() - Number(req.session?.submittedAt || 0) < RESUBMIT_WAIT;
+const sentRecently = (req) => Date.now() - Number(req.session?.submittedAt || 0) < RESUBMIT_WAIT;
+// Solicitudes en cola: cuentan como enviadas mientras sigan en la cola o ya se hayan entregado.
+// Si el servidor se reinició y la cola se perdió, se deja volver a enviar.
+const deliveredFromQueue = new Set();
+function queuedState(req) {
+  const t = Number(req.session?.queuedAt || 0);
+  const id = req.session?.user?.id;
+  if (!t || !id || Date.now() - t >= RESUBMIT_WAIT) return null;
+  if (queue.some((q) => q.applicantId === id)) return 'pendiente';
+  return deliveredFromQueue.has(id) ? 'entregada' : 'perdida';
+}
+const recentlySubmitted = (req) => sentRecently(req) || ['pendiente', 'entregada'].includes(queuedState(req));
 app.get('/api/me', apiLimit, noStore, (req, res) => {
   res.json({ user: req.session?.user || null, loginEnabled: loginConfigured(), submitted: recentlySubmitted(req) });
 });
@@ -243,7 +265,7 @@ class DiscordBusy extends Error {} // Discord está limitando (429): hay que esp
 let reviewChannel = CHANNEL_ID ? { channelId: CHANNEL_ID } : null;
 async function getReviewChannel() {
   if (reviewChannel) return reviewChannel;
-  const r = await discordRequest(fetch, WEBHOOK_URL);
+  const r = await discordRequest(dfetch, WEBHOOK_URL);
   if (r.limit) {
     console.error(`[solicitud] no se pudo leer el webhook (429: ${describeLimit(r.limit)})`);
     throw new DiscordBusy('discord_429');
@@ -276,7 +298,7 @@ async function sendApplication(payload, applicantId) {
       console.error('[solicitud]', err.message);
     }
   }
-  const r = await discordRequest(fetch, `${WEBHOOK_URL}?wait=true`, {
+  const r = await discordRequest(dfetch, `${WEBHOOK_URL}?wait=true`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -319,6 +341,8 @@ async function flushQueue() {
     try {
       const via = await sendApplication(item.payload, item.applicantId);
       queue.shift();
+      if (deliveredFromQueue.size > 5000) deliveredFromQueue.clear();
+      deliveredFromQueue.add(item.applicantId);
       console.log(`[cola] solicitud de ${item.applicantId} entregada (${via}) tras ${Math.round((Date.now() - item.at) / 60_000)} min. Pendientes: ${queue.length}`);
     } catch (err) {
       if (err instanceof DiscordBusy) break; // sigue bloqueado: se intenta en la próxima vuelta
@@ -358,7 +382,7 @@ app.post('/api/solicitud', submitLimit, noStore, express.json({ limit: '20kb' })
     if (err instanceof DiscordBusy) {
       // Discord bloquea al servidor un rato: se guarda y se envía sola cuando lo permita.
       if (payload && enqueue({ payload, applicantId: user.id, roblox: data.roblox })) {
-        req.session.submittedAt = Date.now();
+        req.session.queuedAt = Date.now();
         return res.status(202).json({ ok: true, queued: true });
       }
       return res.status(503).json({ error: 'Discord está limitando los envíos en este momento. Tus respuestas quedan guardadas: intenta de nuevo en unos minutos.' });
@@ -508,8 +532,15 @@ app.listen(PORT, () => {
   if (process.env.DISCORD_PUBLIC_KEY && !PUBLIC_KEY) console.log('DISCORD_PUBLIC_KEY no es válida (deben ser 64 caracteres).');
   console.log(`Interactions Endpoint URL: ${BASE_URL}/api/discord/interactions`);
   console.log(`Rol al aceptar: ${WHITELIST_ROLE || 'ninguno (falta WHITELIST_ROLE)'}`);
-  discordRequest(fetch, `${API}/gateway`).then((r) => console.log(
-    r.ok ? 'API de Discord: responde bien' : `API de Discord: ${r.status}${r.limit ? ` (${describeLimit(r.limit)})` : ''}`,
+  const probe = `${API}/invites/${encodeURIComponent(INVITE_CODE)}`;
+  discordRequest(fetch, probe).then((r) => console.log(
+    r.ok ? 'API de Discord (IP principal): responde bien' : `API de Discord (IP principal): ${r.status}${r.limit ? ` (${describeLimit(r.limit)})` : ''}`,
   ));
+  if (relay) {
+    relay(probe).then((r) => console.log(r.ok ? 'Puente a Discord: listo y Discord responde' : `Puente a Discord: Discord respondió ${r.status}`))
+      .catch((err) => console.log(`Puente a Discord: no responde (${err.message})`));
+  } else {
+    console.log('Puente a Discord: no configurado (RELAY_URL / RELAY_SECRET)');
+  }
   if (bot) touchGateway(BOT_TOKEN).then((r) => console.log(r.ok ? 'Bot de Discord: conectado' : `Bot de Discord: no se pudo conectar (${r.reason})`));
 });
