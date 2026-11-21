@@ -19,6 +19,8 @@ import os from 'node:os';
 import { connectPostgres, connectSqlite, migrate } from './lib/db.js';
 import { configureJobs, jobsFor, publicJobs, SHIFT } from './lib/jobs.js';
 import * as panel from './lib/panel.js';
+import { buildCommands, handleCommand, sameCommands } from './lib/commands.js';
+import { createErlc } from './lib/erlc.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -50,6 +52,9 @@ const STAFF_ROLES = (process.env.STAFF_ROLES || '').split(',').map((r) => r.trim
 const RESUBMIT_WAIT = 24 * 60 * 60 * 1000;
 const DATABASE_URL = process.env.DATABASE_URL || '';
 const JOBS = configureJobs(process.env.JOB_ROLES || '');
+// ER:LC: con la llave del servidor privado se ven los jugadores y se comprueba que estés dentro al iniciar turno
+const ERLC_KEY = (process.env.ERLC_API_KEY || '').trim();
+const ERLC_REQUIRE_INGAME = (process.env.ERLC_TURNO_EN_JUEGO || 'si').toLowerCase() !== 'no';
 const HOME_GUILD = GUILD_ID || '1560736880478130178'; // servidor de Discord de Panamá RP
 // Puente a Discord (otro servicio en otra región) para cuando Discord bloquea la IP de Render.
 const RELAY_URL = /^https?:\/\/[\w.-]+(:\d+)?$/.test((process.env.RELAY_URL || '').replace(/\/$/, '')) ? process.env.RELAY_URL.replace(/\/$/, '') : '';
@@ -109,6 +114,26 @@ const dfetch = createSmartFetch({
 });
 const discordFetch = (url, opts = {}) => dfetch(url, { ...opts, signal: AbortSignal.timeout(8000) });
 const bot = BOT_TOKEN ? createDiscordBot({ token: BOT_TOKEN, apiBase: API, fetchImpl: dfetch }) : null;
+const erlc = ERLC_KEY ? createErlc({ key: ERLC_KEY }) : null;
+
+// Antes de iniciar un turno: si hay llave de ER:LC, la persona debe estar dentro del servidor.
+async function verifyInGame(character) {
+  if (!erlc || !ERLC_REQUIRE_INGAME) return;
+  let inside;
+  try {
+    inside = await erlc.isInServer({ id: character.roblox_id, name: character.roblox_name });
+  } catch (err) {
+    console.error('[erlc]', err.message); // si la API de ER:LC falla, no se bloquea a nadie
+    return;
+  }
+  if (!inside) throw new panel.PanelError(409, `Entra al servidor de ER:LC con tu cuenta (${character.roblox_name}) para iniciar el turno.`);
+}
+
+// Estado del servidor de ER:LC sin hacer esperar a nadie (máx. 1,5 s)
+async function erlcStatus() {
+  if (!erlc) return null;
+  return Promise.race([erlc.status().catch(() => null), new Promise((r) => setTimeout(() => r(null), 1500))]);
+}
 
 // ─── Inicio de sesión con Discord ───
 app.get('/auth/discord', authLimit, noStore, (req, res) => {
@@ -533,6 +558,54 @@ async function applyDecision(effect, interaction) {
   }).catch(() => {});
 }
 
+// Comandos de barra (/banco, /cedula, /multar…): usan la misma base de datos que el panel.
+async function runCommand(interaction) {
+  let out;
+  try {
+    const store = await getDb();
+    if (!store) {
+      out = { private: { content: '❌ La base de datos no responde. Intenta en un momento.' } };
+    } else {
+      const roles = Array.isArray(interaction.member?.roles) ? interaction.member.roles : [];
+      const guildRoles = bot ? await bot.guildRoles(interaction.guild_id || HOME_GUILD) : [];
+      const [wlRole] = bot && WHITELIST_ROLE ? await bot.resolveRoles(interaction.guild_id || HOME_GUILD, [WHITELIST_ROLE]) : [];
+      out = await handleCommand(interaction, {
+        db: store,
+        jobs: jobsFor(roles, guildRoles, JOBS),
+        JOBS,
+        isCitizen: wlRole ? roles.includes(wlRole) : true,
+        robloxAvatar: async (name) => (name ? (await lookupRoblox(name).catch(() => null))?.avatar || null : null),
+        erlc,
+        siteUrl: BASE_URL,
+        verifyInGame,
+      });
+    }
+  } catch (err) {
+    console.error('[comando]', interaction.data?.name, err.message);
+    out = { private: { content: '❌ Algo falló. Intenta de nuevo.' } };
+  }
+  const base = `${API}/webhooks/${interaction.application_id || CLIENT_ID}/${encodeURIComponent(interaction.token)}`;
+  const json = { 'Content-Type': 'application/json' };
+  await discordFetch(`${base}/messages/@original`, { method: 'PATCH', headers: json, body: JSON.stringify({ allowed_mentions: { parse: [] }, ...out.private }) })
+    .catch((err) => console.error('[comando] respuesta:', err.message));
+  if (out.public) {
+    await discordFetch(base, { method: 'POST', headers: json, body: JSON.stringify({ allowed_mentions: { parse: [] }, ...out.public }) })
+      .catch((err) => console.error('[comando] mensaje público:', err.message));
+  }
+}
+
+// Registra los comandos en el servidor de Discord (solo si cambiaron).
+async function syncCommands() {
+  if (!bot || !CLIENT_ID) return;
+  const local = buildCommands(JOBS);
+  const route = `/applications/${CLIENT_ID}/guilds/${HOME_GUILD}/commands`;
+  const current = await bot.call('GET', route);
+  if (current.ok && sameCommands(current.data, local)) return console.log(`Comandos de Discord: listos (${local.length})`);
+  const r = await bot.call('PUT', route, local);
+  console.log(r.ok ? `Comandos de Discord: registrados (${local.length})`
+    : `Comandos de Discord: no se pudieron registrar (error ${r.status}${r.code === 50001 ? ': vuelve a invitar el bot desde /bot/invitar' : ''})`);
+}
+
 app.post('/api/discord/interactions', express.raw({ type: () => true, limit: '200kb' }), async (req, res) => {
   if (!PUBLIC_KEY) return res.status(503).json({ error: 'Falta DISCORD_PUBLIC_KEY.' });
   const valid = verifyInteraction({
@@ -544,6 +617,13 @@ app.post('/api/discord/interactions', express.raw({ type: () => true, limit: '20
   if (!valid) return res.status(401).json({ error: 'Firma inválida.' });
   let interaction;
   try { interaction = JSON.parse(req.body.toString('utf8')); } catch { return res.status(400).json({ error: 'JSON inválido.' }); }
+
+  if (interaction.type === 2) {
+    // "El bot está pensando…" (privado) y el resultado llega en unos segundos
+    res.json({ type: 5, data: { flags: 64 } });
+    runCommand(interaction).catch((err) => console.error('[comando]', err.message));
+    return;
+  }
 
   let roles = [];
   if (interaction.type !== 1 && interaction.guild_id) {
@@ -557,7 +637,7 @@ app.post('/api/discord/interactions', express.raw({ type: () => true, limit: '20
 // Enlace corto para añadir el bot al servidor con los permisos justos.
 app.get('/bot/invitar', (req, res) => {
   if (!CLIENT_ID) return res.redirect('/');
-  const q = new URLSearchParams({ client_id: CLIENT_ID, scope: 'bot', permissions: BOT_PERMISSIONS });
+  const q = new URLSearchParams({ client_id: CLIENT_ID, scope: 'bot applications.commands', permissions: BOT_PERMISSIONS });
   if (GUILD_ID) { q.set('guild_id', GUILD_ID); q.set('disable_guild_select', 'true'); }
   res.redirect(`https://discord.com/oauth2/authorize?${q}`);
 });
@@ -655,7 +735,7 @@ app.get('/api/panel/estado', panelLimit, panelRoute(async ({ user, db: d, jobs }
   if (Date.now() >= nextRefresh) refreshStats(); // contador de Discord (no se espera)
   return {
     now: Date.now(), user, modo: dbMode, character, account, shift, stats: week, fines, arrests, transactions, roblox,
-    shifts, ranking: ranking.map(({ _id, ...r }) => ({ ...r, yo: _id === user.id })), online: stats.online,
+    shifts, ranking: ranking.map(({ _id, ...r }) => ({ ...r, yo: _id === user.id })), online: stats.online, erlc: await erlcStatus(),
     solicitud, jobs, jobInfo: publicJobs(JOBS), shiftRules: SHIFT, money: panel.MONEY, options: OPTIONS,
   };
 }));
@@ -685,7 +765,7 @@ post('/cedula', async ({ user, db: d }, req) => {
 post('/banco/mover', async ({ user, db: d }, req) => ({ account: await panel.moveMoney(d, user.id, req.body?.tipo, req.body?.monto) }));
 post('/banco/transferir', async ({ user, db: d }, req) => panel.transfer(d, user.id, req.body?.cedula, req.body?.monto, req.body?.nota));
 post('/multas/pagar', async ({ user, db: d }, req) => ({ account: await panel.payFine(d, user.id, req.body?.id) }));
-post('/turno/iniciar', async ({ user, db: d, jobs }, req) => ({ shift: await panel.startShift(d, user.id, req.body?.job, { jobs: JOBS, allowed: jobs }) }));
+post('/turno/iniciar', async ({ user, db: d, jobs }, req) => ({ shift: await panel.startShift(d, user.id, req.body?.job, { jobs: JOBS, allowed: jobs, verify: verifyInGame }) }));
 post('/turno/terminar', async ({ user, db: d }) => ({ result: await panel.endShift(d, user.id, { jobs: JOBS }) }));
 post('/policia/multa', async ({ user, db: d, jobs }, req) => {
   if (!jobs.includes('policia')) throw new panel.PanelError(403, 'No tienes el rol de Policía.');
@@ -740,6 +820,9 @@ app.listen(PORT, () => {
   console.log(`Interactions Endpoint URL: ${BASE_URL}/api/discord/interactions`);
   console.log(`Rol al aceptar: ${WHITELIST_ROLE || 'ninguno (falta WHITELIST_ROLE)'}`);
   getDb();
+  console.log(erlc ? `ER:LC: conectado${ERLC_REQUIRE_INGAME ? ' (para iniciar turno hay que estar dentro del servidor)' : ''}` : 'ER:LC: falta ERLC_API_KEY');
+  if (erlc) erlc.status().then((st) => console.log(st.encendido ? `ER:LC: ${st.nombre} · ${st.jugadores}/${st.maximo} jugadores` : 'ER:LC: servidor apagado')).catch((err) => console.log(`ER:LC: ${err.message}`));
+  if (bot) setTimeout(() => syncCommands().catch((err) => console.error('[comandos]', err.message)), 3000);
   const probe = `${API}/invites/${encodeURIComponent(INVITE_CODE)}`;
   discordRequest(fetch, probe).then((r) => console.log(
     r.ok ? 'API de Discord (IP principal): responde bien' : `API de Discord (IP principal): ${r.status}${r.limit ? ` (${describeLimit(r.limit)})` : ''}`,

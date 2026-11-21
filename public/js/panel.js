@@ -92,6 +92,7 @@
   function renderHead(view) {
     const [title, sub] = TITLES[view]();
     const pills = [
+      S.erlc ? (S.erlc.encendido ? `<span class="pn-pill"><i class="dot on"></i>${S.erlc.jugadores}/${S.erlc.maximo} jugadores</span>` : '<span class="pn-pill"><i class="dot"></i>Servidor apagado</span>') : '',
       S.online != null ? `<span class="pn-pill"><i class="dot"></i>${S.online} en Discord</span>` : '',
       S.account ? `<span class="pn-pill">${ico('cash')}${money(S.account.efectivo)} efectivo</span>` : '',
       S.shift ? `<a class="pn-pill on" href="#trabajos"><i class="dot on"></i>En turno · ${esc(jobInfo(S.shift.job).name)}</a>` : '',

@@ -16,6 +16,10 @@ Web del servidor Panamá RP (ER:LC) con inicio de sesión de Discord y contadore
 | `DISCORD_PUBLIC_KEY` | Public Key de la app (General Information). Además pon `https://TU-WEB/api/discord/interactions` en *Interactions Endpoint URL* |
 | `WHITELIST_ROLE` | Nombre o ID del rol que se da al aceptar (ej. `Ciudadano`). El rol del bot debe estar por encima |
 | `STAFF_ROLES` | *(opcional)* roles que pueden revisar, separados por comas. Si no se pone: admins y quien pueda gestionar roles |
+| `DATABASE_URL` | Base de datos Postgres (Neon). Sin ella el panel funciona en modo de prueba |
+| `ERLC_API_KEY` | *(opcional)* llave del servidor privado de ER:LC (ajustes del servidor → API key) |
+| `ERLC_TURNO_EN_JUEGO` | *(opcional)* `no` para dejar iniciar turno sin estar dentro del servidor de ER:LC |
+| `JOB_ROLES` | *(opcional)* nombres de los roles de trabajo, ej. `policia=Policía Nacional;ems=Paramédicos` |
 | `NODE_VERSION` | `24` |
 | `NODE_ENV` | `production` |
 
@@ -64,3 +68,9 @@ Render gratis comparte su IP con muchos servicios y Discord a veces la bloquea h
 - Servicio del puente: start `node relay.js`, variable `RELAY_SECRET` (32+ caracteres).
 - Servicio principal: `RELAY_URL` (URL del puente) y el mismo `RELAY_SECRET`.
 - El puente no guarda tokens: solo reenvía peticiones firmadas a `https://discord.com/api/`.
+
+## Comandos del bot
+
+El mismo bot de la whitelist tiene comandos de barra que usan la misma base de datos que el panel:
+`/cedula`, `/banco`, `/depositar`, `/retirar`, `/transferir`, `/multas`, `/pagar`, `/turno iniciar|terminar|estado`,
+`/multar`, `/arrestar`, `/antecedentes` (Policía en turno) y `/servidor` (ER:LC). Se registran solos al arrancar.
