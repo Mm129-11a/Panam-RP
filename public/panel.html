@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#060a14" />
+<title>Panel · Panamá Roleplay</title>
+<link rel="icon" type="image/png" href="/img/favicon.png" />
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Saira:ital,wght@0,600;0,700;1,700;1,800;1,900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/css/styles.css" />
+<link rel="stylesheet" href="/css/panel.css" />
+<script src="/js/panel.js" defer></script>
+</head>
+<body class="pn-body">
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="/" aria-label="Inicio">
+      <img src="/img/logo.webp" alt="Panamá RP" width="48" height="48" />
+      <span class="brand-word">PANAMÁ<span>RP</span></span>
+    </a>
+    <div class="nav-right">
+      <div class="pn-me hidden" id="pn-me">
+        <img id="pn-me-pic" alt="" width="34" height="34" />
+        <span id="pn-me-name"></span>
+      </div>
+      <button class="btn ghost" type="button" id="pn-logout">Salir</button>
+    </div>
+  </div>
+</header>
+
+<div class="pn-shell wrap">
+  <nav class="pn-nav hidden" id="pn-nav" aria-label="Secciones del panel"></nav>
+  <main class="pn-main" id="pn-main">
+    <div class="pn-loading" id="pn-loading"><span class="pn-spin" aria-hidden="true"></span>Cargando tu panel…</div>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

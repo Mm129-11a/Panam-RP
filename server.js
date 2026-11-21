@@ -15,6 +15,10 @@ import {
   BOT_PERMISSIONS, BOT_TOKEN_RE, createDiscordBot, describeLimit, discordRequest, decide, decisionDm, publicKeyFromHex, reviewComponents, touchGateway, verifyInteraction,
 } from './lib/review.js';
 import { createRelayFetch, createSmartFetch } from './lib/relay.js';
+import os from 'node:os';
+import { connectPostgres, connectSqlite, migrate } from './lib/db.js';
+import { configureJobs, jobsFor, publicJobs, SHIFT } from './lib/jobs.js';
+import * as panel from './lib/panel.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -44,12 +48,14 @@ const WHITELIST_ROLE = (process.env.WHITELIST_ROLE || '').trim(); // nombre o ID
 const CHANNEL_ID = /^\d{5,25}$/.test(process.env.WHITELIST_CHANNEL_ID || '') ? process.env.WHITELIST_CHANNEL_ID : ''; // opcional
 const STAFF_ROLES = (process.env.STAFF_ROLES || '').split(',').map((r) => r.trim()).filter(Boolean);
 const RESUBMIT_WAIT = 24 * 60 * 60 * 1000;
+const DATABASE_URL = process.env.DATABASE_URL || '';
+const JOBS = configureJobs(process.env.JOB_ROLES || '');
 const HOME_GUILD = GUILD_ID || '1560736880478130178'; // servidor de Discord de Panamá RP
 // Puente a Discord (otro servicio en otra región) para cuando Discord bloquea la IP de Render.
 const RELAY_URL = /^https?:\/\/[\w.-]+(:\d+)?$/.test((process.env.RELAY_URL || '').replace(/\/$/, '')) ? process.env.RELAY_URL.replace(/\/$/, '') : '';
 const RELAY_SECRET = process.env.RELAY_SECRET || ''; // una solicitud cada 24 h por cuenta
 // Páginas a las que se puede volver tras iniciar sesión (lista cerrada: evita redirecciones a otras webs).
-const RETURN_PATHS = ['/', '/solicitud'];
+const RETURN_PATHS = ['/', '/solicitud', '/panel'];
 
 // Sin un secreto fuerte cualquiera podría falsificar sesiones: en producción no arranca.
 if (IS_PROD && SESSION_SECRET.length < 32) {
@@ -68,7 +74,8 @@ const ipOf = (req) => {
   return ip;
 };
 app.use(securityHeaders({ https: HTTPS }));
-app.use(methodGuard(['/logout', '/api/solicitud', '/api/discord/interactions']));
+const PANEL_POSTS = ['/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/policia/multa', '/policia/arresto'];
+app.use(methodGuard(['/logout', '/api/solicitud', '/api/discord/interactions', ...PANEL_POSTS.map((p) => `/api/panel${p}`)]));
 app.use(rateLimit({ windowMs: 60_000, max: 300, keyFn: ipOf }));
 
 const authLimit = rateLimit({
@@ -187,26 +194,36 @@ function queuedState(req) {
   return deliveredFromQueue.has(id) ? 'entregada' : 'perdida';
 }
 const recentlySubmitted = (req) => sentRecently(req) || ['pendiente', 'entregada'].includes(queuedState(req));
-// ¿Ya tiene la whitelist? Se mira en Discord si tiene el rol (WHITELIST_ROLE). Se guarda 1–10 min.
-const wlCache = new Map();
+// Roles de una persona en el servidor de Discord (con el bot). Se guarda 1 min.
+const memberCache = new Map();
+async function memberInfo(userId) {
+  if (!bot || !userId) return null;
+  const hit = memberCache.get(userId);
+  if (hit && Date.now() < hit.until) return hit.info;
+  let info = null;
+  const r = await bot.call('GET', `/guilds/${HOME_GUILD}/members/${userId}`);
+  if (r.ok && Array.isArray(r.data?.roles)) info = { inGuild: true, roles: r.data.roles };
+  else if (r.code === 10007) info = { inGuild: false, roles: [] };
+  if (memberCache.size > 5000) memberCache.clear();
+  if (info) memberCache.set(userId, { info, until: Date.now() + 60_000 });
+  return info;
+}
+
+// ¿Ya tiene la whitelist? = tiene el rol WHITELIST_ROLE en Discord.
+const wlCache = new Map(); // decisiones recientes del staff (para no esperar a la caché)
 async function whitelistStatus(userId) {
   if (!bot || !WHITELIST_ROLE || !userId) return null;
-  const hit = wlCache.get(userId);
-  if (hit && Date.now() < hit.until) return hit.status;
-  let status = null;
+  const forced = wlCache.get(userId);
+  if (forced && Date.now() < forced.until) return forced.status;
   try {
     const [roleId] = await bot.resolveRoles(HOME_GUILD, [WHITELIST_ROLE]);
-    if (roleId) {
-      const r = await bot.call('GET', `/guilds/${HOME_GUILD}/members/${userId}`);
-      if (r.ok && Array.isArray(r.data?.roles)) status = r.data.roles.includes(roleId) ? 'aceptada' : 'sin_rol';
-      else if (r.code === 10007) status = 'fuera_del_servidor';
-    }
+    const info = await memberInfo(userId);
+    if (!roleId || !info) return null;
+    if (!info.inGuild) return 'fuera_del_servidor';
+    return info.roles.includes(roleId) ? 'aceptada' : 'sin_rol';
   } catch {
-    status = null;
+    return null;
   }
-  if (wlCache.size > 5000) wlCache.clear();
-  wlCache.set(userId, { status, until: Date.now() + (status === 'aceptada' ? 10 : 1) * 60_000 });
-  return status;
 }
 
 app.get('/api/me', apiLimit, noStore, async (req, res) => {
@@ -400,7 +417,10 @@ app.post('/api/solicitud', submitLimit, noStore, express.json({ limit: '20kb' })
   try {
     const roblox = await lookupRoblox(data.roblox); // se vuelve a comprobar aquí: no se confía en el navegador
     if (!roblox) return res.status(400).json({ error: 'Revisa los campos marcados.', errors: { roblox: 'No existe ese usuario en Roblox.' } });
-    payload = buildWebhookPayload({ user, roblox, data, score: scoreApplication(data.respuestas) });
+    const score = scoreApplication(data.respuestas);
+    payload = buildWebhookPayload({ user, roblox, data, score });
+    const store = await getDb();
+    if (store) await panel.saveApplication(store, { user, roblox, data, score }).catch((e) => console.error('[db] guardar solicitud:', e.message));
     await sendApplication(payload, user.id);
     req.session.submittedAt = Date.now();
     res.json({ ok: true });
@@ -484,8 +504,23 @@ async function applyDecision(effect, interaction) {
     const dm = await bot.dm(effect.applicantId, decisionDm({ kind: effect.kind, motivo: effect.motivo, siteUrl: BASE_URL }));
     if (!dm.ok) problems.push(dm.code === 50007 ? 'No pude avisarle por MD (tiene los mensajes privados cerrados).' : `No pude avisarle por MD (error ${dm.status}).`);
   }
-  if (effect.kind === 'accept' && !problems.some((p) => p.includes('rol'))) wlCache.set(effect.applicantId, { status: 'aceptada', until: Date.now() + 10 * 60_000 });
+  if (effect.kind === 'accept' && !problems.some((p) => p.includes('rol'))) wlCache.set(effect.applicantId, { status: 'aceptada', until: Date.now() + 2 * 60_000 });
   else wlCache.delete(effect.applicantId);
+  memberCache.delete(effect.applicantId);
+  const store = await getDb();
+  if (store) {
+    try {
+      await panel.setApplicationStatus(store, effect.applicantId, effect.kind === 'accept' ? 'aceptada' : 'rechazada');
+      if (effect.kind === 'accept') {
+        const last = await panel.latestApplication(store, effect.applicantId);
+        if (last?.personaje && !(await panel.getCharacter(store, effect.applicantId))) {
+          await panel.createCharacter(store, { user: { id: effect.applicantId, name: '' }, roblox: last.roblox, input: last.personaje });
+        }
+      }
+    } catch (err) {
+      console.error('[db] al revisar la solicitud:', err.message);
+    }
+  }
   console.log(`[revisión] solicitud de ${effect.applicantId} ${effect.kind === 'accept' ? 'aceptada' : 'rechazada'} por ${effect.staffName || effect.staffId}${problems.length ? ' (con avisos)' : ': rol y mensaje privado OK'}`);
   if (!problems.length) return;
   console.error('[revisión]', problems.join(' | '));
@@ -527,6 +562,131 @@ app.get('/bot/invitar', (req, res) => {
   res.redirect(`https://discord.com/oauth2/authorize?${q}`);
 });
 
+// ─── Base de datos ───
+// Con DATABASE_URL (Neon) los datos son permanentes. Sin ella, modo de prueba: SQLite en un archivo
+// temporal que se borra cuando Render reinicia la web.
+let db = null;
+let dbMode = DATABASE_URL ? 'neon' : 'prueba';
+let dbPending = null;
+let dbRetryAt = 0;
+function getDb() {
+  if (db) return Promise.resolve(db);
+  if (Date.now() < dbRetryAt) return Promise.resolve(null);
+  if (!dbPending) {
+    dbPending = (async () => {
+      try {
+        const conn = DATABASE_URL ? await connectPostgres(DATABASE_URL) : await connectSqlite(path.join(os.tmpdir(), 'panama-rp-prueba.db'));
+        await migrate(conn);
+        db = conn;
+        console.log(DATABASE_URL ? 'Base de datos: Neon conectada' : 'Base de datos: MODO DE PRUEBA (falta DATABASE_URL; los datos se borran al reiniciar)');
+      } catch (err) {
+        console.error('[db] no se pudo conectar:', err.message);
+        dbRetryAt = Date.now() + 20_000;
+      } finally {
+        dbPending = null;
+      }
+      return db;
+    })();
+  }
+  return dbPending;
+}
+
+// ─── Panel de ciudadano ───
+const panelLimit = rateLimit({ windowMs: 60_000, max: 120, keyFn: ipOf });
+const panelWriteLimit = rateLimit({ windowMs: 60_000, max: 30, keyFn: ipOf, message: 'Vas muy rápido. Espera un momento.' });
+const weekAgo = () => Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+// Todo lo del panel pasa por aquí: sesión, whitelist, base de datos y trabajos según los roles.
+async function panelContext(req) {
+  const user = req.session?.user;
+  if (!loginConfigured()) throw new panel.PanelError(503, 'El inicio de sesión aún no está activado.');
+  if (!user) {
+    const err = new panel.PanelError(401, 'Inicia sesión con Discord.');
+    err.gate = 'login';
+    throw err;
+  }
+  const wl = await whitelistStatus(user.id);
+  if (wl === null) throw new panel.PanelError(503, 'No se pudo comprobar tu whitelist. Intenta en un momento.');
+  if (wl !== 'aceptada') {
+    const err = new panel.PanelError(403, wl === 'fuera_del_servidor' ? 'Únete al Discord de Panamá RP.' : 'Necesitas la whitelist aceptada para entrar al panel.');
+    err.gate = 'whitelist';
+    throw err;
+  }
+  const store = await getDb();
+  if (!store) throw new panel.PanelError(503, 'La base de datos no responde. Intenta en un momento.');
+  const info = await memberInfo(user.id);
+  const roles = bot ? await bot.guildRoles(HOME_GUILD) : [];
+  const jobs = jobsFor(info?.roles || [], roles, JOBS);
+  return { user, db: store, jobs };
+}
+
+function panelRoute(handler, { write = false } = {}) {
+  return async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (write && !isSameOrigin(req, ORIGIN)) return res.status(403).json({ error: 'Solicitud no permitida.' });
+    try {
+      const ctx = await panelContext(req);
+      res.json(await handler(ctx, req));
+    } catch (err) {
+      if (err instanceof panel.PanelError) {
+        return res.status(err.status).json({ error: err.message, ...(err.fields ? { errors: err.fields } : {}), ...(err.gate ? { gate: err.gate } : {}) });
+      }
+      console.error('[panel]', err.message);
+      res.status(500).json({ error: 'Algo falló. Intenta de nuevo.' });
+    }
+  };
+}
+
+const panelJson = express.json({ limit: '10kb' });
+const post = (p, handler) => app.post(`/api/panel${p}`, panelLimit, panelWriteLimit, panelJson, panelRoute(handler, { write: true }));
+
+app.get('/api/panel/estado', panelLimit, panelRoute(async ({ user, db: d, jobs }) => {
+  const [character, account, shift, stats, fines, arrests, transactions] = await Promise.all([
+    panel.getCharacter(d, user.id), panel.getAccount(d, user.id), panel.activeShift(d, user.id),
+    panel.shiftStats(d, user.id, weekAgo()), panel.listFines(d, user.id), panel.listArrests(d, user.id), panel.listTransactions(d, user.id),
+  ]);
+  const solicitud = character ? null : await panel.latestApplication(d, user.id);
+  return {
+    now: Date.now(), user, modo: dbMode, character, account, shift, stats, fines, arrests, transactions,
+    solicitud, jobs, jobInfo: publicJobs(JOBS), shiftRules: SHIFT, money: panel.MONEY, options: OPTIONS,
+  };
+}));
+
+post('/cedula', async ({ user, db: d }, req) => {
+  const b = req.body || {};
+  let roblox = null;
+  const name = typeof b.roblox === 'string' ? b.roblox.trim() : '';
+  if (name) {
+    if (!ROBLOX_USER_RE.test(name)) throw new panel.PanelError(400, 'Revisa los campos marcados.', { roblox: 'Usuario de Roblox inválido.' });
+    roblox = await lookupRoblox(name).catch(() => null);
+    if (!roblox) throw new panel.PanelError(400, 'Revisa los campos marcados.', { roblox: 'No existe ese usuario en Roblox.' });
+  } else {
+    roblox = (await panel.latestApplication(d, user.id))?.roblox || null;
+  }
+  return { character: await panel.createCharacter(d, { user, roblox, input: b.personaje }) };
+});
+post('/banco/mover', async ({ user, db: d }, req) => ({ account: await panel.moveMoney(d, user.id, req.body?.tipo, req.body?.monto) }));
+post('/banco/transferir', async ({ user, db: d }, req) => panel.transfer(d, user.id, req.body?.cedula, req.body?.monto, req.body?.nota));
+post('/multas/pagar', async ({ user, db: d }, req) => ({ account: await panel.payFine(d, user.id, req.body?.id) }));
+post('/turno/iniciar', async ({ user, db: d, jobs }, req) => ({ shift: await panel.startShift(d, user.id, req.body?.job, { jobs: JOBS, allowed: jobs }) }));
+post('/turno/terminar', async ({ user, db: d }) => ({ result: await panel.endShift(d, user.id, { jobs: JOBS }) }));
+post('/policia/multa', async ({ user, db: d, jobs }, req) => {
+  if (!jobs.includes('policia')) throw new panel.PanelError(403, 'No tienes el rol de Policía.');
+  return { fine: await panel.issueFine(d, user.id, req.body || {}) };
+});
+post('/policia/arresto', async ({ user, db: d, jobs }, req) => {
+  if (!jobs.includes('policia')) throw new panel.PanelError(403, 'No tienes el rol de Policía.');
+  return { arrest: await panel.registerArrest(d, user.id, req.body || {}) };
+});
+app.get('/api/panel/policia/buscar', panelLimit, panelRoute(async ({ user, db: d, jobs }, req) => {
+  if (!jobs.includes('policia')) throw new panel.PanelError(403, 'No tienes el rol de Policía.');
+  return { results: await panel.searchCitizens(d, user.id, req.query.q) };
+}));
+app.get('/api/panel/policia/actividad', panelLimit, panelRoute(async ({ user, db: d, jobs }) => {
+  if (!jobs.includes('policia')) throw new panel.PanelError(403, 'No tienes el rol de Policía.');
+  return panel.officerActivity(d, user.id);
+}));
+
 app.use('/api', (req, res) => res.status(404).json({ error: 'no_encontrado' }));
 
 app.get('/healthz', (req, res) => res.type('text').send('ok'));
@@ -562,6 +722,7 @@ app.listen(PORT, () => {
   if (process.env.DISCORD_PUBLIC_KEY && !PUBLIC_KEY) console.log('DISCORD_PUBLIC_KEY no es válida (deben ser 64 caracteres).');
   console.log(`Interactions Endpoint URL: ${BASE_URL}/api/discord/interactions`);
   console.log(`Rol al aceptar: ${WHITELIST_ROLE || 'ninguno (falta WHITELIST_ROLE)'}`);
+  getDb();
   const probe = `${API}/invites/${encodeURIComponent(INVITE_CODE)}`;
   discordRequest(fetch, probe).then((r) => console.log(
     r.ok ? 'API de Discord (IP principal): responde bien' : `API de Discord (IP principal): ${r.status}${r.limit ? ` (${describeLimit(r.limit)})` : ''}`,

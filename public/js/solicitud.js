@@ -233,8 +233,8 @@
 
   const viewAccepted = () => screen(`<div class="big-ico ok">✓</div>
     <h2 class="ap-h">¡Tu whitelist fue aceptada!</h2>
-    <p>Ya eres ciudadano de Panamá RP. Entra al servidor de ER:LC y repasa la normativa antes de rolear.</p>
-    <a class="btn lg" href="/">Volver al inicio</a>
+    <p>Ya eres ciudadano de Panamá RP. En el panel tienes tu cédula, tu banco y tus trabajos.</p>
+    <a class="btn lg" href="/panel">Entrar al panel</a>
     <a class="btn lg ghost" href="/#normativa">Ver normativa</a>`);
 
   function banner(kind, html) {

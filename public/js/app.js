@@ -151,8 +151,18 @@ show(location.hash.slice(1));
 const SESSION = { user: null };
 function openModal(title, text){ $('#modal-title').textContent=title; $('#modal-text').textContent=text; $('#modal').classList.add('show'); }
 
-fetch('/api/me').then(r=>r.json()).then(({user})=>{
+fetch('/api/me').then(r=>r.json()).then(({user, whitelist})=>{
   if(!user) return;
+  if(whitelist === 'aceptada'){
+    // Ya es ciudadano: el botón principal lleva al panel
+    const a = document.createElement('a');
+    a.className = 'btn btn-panel'; a.href = '/panel'; a.textContent = 'Mi panel';
+    $('#userchip').before(a);
+    $('#userchip').classList.add('compact'); // menos espacio: el nombre ya sale en el panel
+    document.body.classList.add('ciudadano');
+    $$('.btn-wl').forEach(b => { b.href = '/panel'; const s = $('span', b); if (s) s.textContent = 'Entrar al panel'; });
+    const note = $('.wl-note'); if (note) note.lastChild.textContent = 'Tu whitelist está aceptada';
+  }
   SESSION.user = user;
   $('#btn-login-top').classList.add('hidden');
   $('#userchip').classList.remove('hidden');
