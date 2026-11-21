@@ -239,34 +239,40 @@ app.get('/api/roblox/avatares', apiLimit, async (req, res) => {
 });
 
 // Canal de las solicitudes: WHITELIST_CHANNEL_ID o, si no está, el del webhook (Discord lo dice al consultarlo).
+class DiscordBusy extends Error {} // Discord está limitando (429): hay que esperar, no cambiar de vía
 let reviewChannel = CHANNEL_ID ? { channelId: CHANNEL_ID } : null;
 async function getReviewChannel() {
   if (reviewChannel) return reviewChannel;
   const r = await discordRequest(fetch, WEBHOOK_URL);
-  if (!r.ok) throw new Error(`no se pudo leer el webhook (${r.status}${r.limit ? `: ${describeLimit(r.limit)}` : ''})`);
+  if (r.limit) {
+    console.error(`[solicitud] no se pudo leer el webhook (429: ${describeLimit(r.limit)})`);
+    throw new DiscordBusy('discord_429');
+  }
+  if (!r.ok) throw new Error(`no se pudo leer el webhook (${r.status})`);
   if (!/^\d{5,25}$/.test(r.data?.channel_id || '')) throw new Error('el webhook no tiene canal');
   reviewChannel = { channelId: r.data.channel_id };
   console.log(`[solicitud] canal de solicitudes: ${reviewChannel.channelId}`);
   return reviewChannel;
 }
 
-class DiscordBusy extends Error {}
-
 // Publica la solicitud. Con bot lleva botones; si el bot falla, se manda igual por el webhook (sin botones).
+// Si Discord está limitando, se lanza DiscordBusy para reintentar luego con el bot (y que lleguen los botones).
 async function sendApplication(payload, applicantId) {
-  let limited = null;
   if (bot) {
     try {
       const { channelId } = await getReviewChannel();
       const { username, ...message } = payload;
       const r = await bot.postMessage(channelId, { ...message, components: reviewComponents(applicantId) });
       if (r.ok) return 'bot';
-      if (r.limit) limited = r.limit;
-      const why = r.limit ? describeLimit(r.limit)
-        : r.code === 50001 || r.code === 50013 ? 'el bot no puede ver o escribir en ese canal: añádelo al canal'
+      if (r.limit) {
+        console.error(`[solicitud] el bot no pudo publicar (429: ${describeLimit(r.limit)})`);
+        throw new DiscordBusy('discord_429');
+      }
+      const why = r.code === 50001 || r.code === 50013 ? 'el bot no puede ver o escribir en ese canal: añádelo al canal'
           : r.status === 401 ? 'DISCORD_BOT_TOKEN no es válido' : `error ${r.status}${r.code ? ` código ${r.code}` : ''}`;
       console.error(`[solicitud] el bot no pudo publicar (${why}); se prueba con el webhook`);
     } catch (err) {
+      if (err instanceof DiscordBusy) throw err;
       console.error('[solicitud]', err.message);
     }
   }
@@ -276,11 +282,57 @@ async function sendApplication(payload, applicantId) {
     body: JSON.stringify(payload),
   });
   if (r.ok) return 'webhook';
-  if (r.limit || limited) {
-    console.error(`[solicitud] webhook 429: ${describeLimit(r.limit || limited)}`);
+  if (r.limit) {
+    console.error(`[solicitud] webhook 429: ${describeLimit(r.limit)}`);
     throw new DiscordBusy('discord_429');
   }
   throw new Error(`webhook ${r.status}${r.code ? ` código ${r.code}` : ''}`);
+}
+
+// ─── Cola de solicitudes ───
+// Render gratis comparte su IP con muchos servicios y a veces Discord la bloquea un rato (error 429 de
+// Cloudflare). En ese caso la solicitud se guarda aquí y se reintenta cada 90 s hasta 24 h.
+const queue = [];
+const QUEUE_MAX = 50;
+const QUEUE_EVERY = 90_000;
+let queueTimer = null;
+
+function enqueue(item) {
+  if (queue.some((q) => q.applicantId === item.applicantId)) return true; // ya estaba en la cola
+  if (queue.length >= QUEUE_MAX) return false;
+  queue.push({ ...item, tries: 0, at: Date.now() });
+  // Queda en los logs por si el servidor se reinicia antes de entregarla
+  console.log(`[cola] Discord bloquea por ahora; solicitud guardada (Discord ${item.applicantId}, Roblox ${item.roblox}). Pendientes: ${queue.length}`);
+  if (!queueTimer) queueTimer = setTimeout(flushQueue, QUEUE_EVERY);
+  return true;
+}
+
+async function flushQueue() {
+  queueTimer = null;
+  while (queue.length) {
+    const item = queue[0];
+    if (Date.now() - item.at > 24 * 60 * 60 * 1000) {
+      queue.shift();
+      console.error(`[cola] se descartó la solicitud de ${item.applicantId} (24 h sin poder entregarla)`);
+      continue;
+    }
+    try {
+      const via = await sendApplication(item.payload, item.applicantId);
+      queue.shift();
+      console.log(`[cola] solicitud de ${item.applicantId} entregada (${via}) tras ${Math.round((Date.now() - item.at) / 60_000)} min. Pendientes: ${queue.length}`);
+    } catch (err) {
+      if (err instanceof DiscordBusy) break; // sigue bloqueado: se intenta en la próxima vuelta
+      item.tries += 1;
+      console.error(`[cola] error enviando la solicitud de ${item.applicantId}: ${err.message}`);
+      if (item.tries >= 5) queue.shift();
+      break;
+    }
+  }
+  if (queue.length) {
+    // Mientras haya pendientes, la web se visita a sí misma para que Render no la duerma.
+    if (ON_RENDER) fetch(`${BASE_URL}/healthz`, { signal: AbortSignal.timeout(10_000) }).catch(() => {});
+    queueTimer = setTimeout(flushQueue, QUEUE_EVERY);
+  }
 }
 
 app.post('/api/solicitud', submitLimit, noStore, express.json({ limit: '20kb' }), async (req, res) => {
@@ -294,15 +346,21 @@ app.post('/api/solicitud', submitLimit, noStore, express.json({ limit: '20kb' })
   const { ok, errors, data } = validateApplication(req.body);
   if (!ok) return res.status(400).json({ error: 'Revisa los campos marcados.', errors });
 
+  let payload = null;
   try {
     const roblox = await lookupRoblox(data.roblox); // se vuelve a comprobar aquí: no se confía en el navegador
     if (!roblox) return res.status(400).json({ error: 'Revisa los campos marcados.', errors: { roblox: 'No existe ese usuario en Roblox.' } });
-    const payload = buildWebhookPayload({ user, roblox, data, score: scoreApplication(data.respuestas) });
+    payload = buildWebhookPayload({ user, roblox, data, score: scoreApplication(data.respuestas) });
     await sendApplication(payload, user.id);
     req.session.submittedAt = Date.now();
     res.json({ ok: true });
   } catch (err) {
     if (err instanceof DiscordBusy) {
+      // Discord bloquea al servidor un rato: se guarda y se envía sola cuando lo permita.
+      if (payload && enqueue({ payload, applicantId: user.id, roblox: data.roblox })) {
+        req.session.submittedAt = Date.now();
+        return res.status(202).json({ ok: true, queued: true });
+      }
       return res.status(503).json({ error: 'Discord está limitando los envíos en este momento. Tus respuestas quedan guardadas: intenta de nuevo en unos minutos.' });
     }
     console.error('[solicitud]', err.message);
