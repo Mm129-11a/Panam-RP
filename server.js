@@ -74,7 +74,7 @@ const ipOf = (req) => {
   return ip;
 };
 app.use(securityHeaders({ https: HTTPS }));
-const PANEL_POSTS = ['/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/policia/multa', '/policia/arresto'];
+const PANEL_POSTS = ['/roblox', '/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/policia/multa', '/policia/arresto'];
 app.use(methodGuard(['/logout', '/api/solicitud', '/api/discord/interactions', ...PANEL_POSTS.map((p) => `/api/panel${p}`)]));
 app.use(rateLimit({ windowMs: 60_000, max: 300, keyFn: ipOf }));
 
@@ -641,17 +641,34 @@ const panelJson = express.json({ limit: '10kb' });
 const post = (p, handler) => app.post(`/api/panel${p}`, panelLimit, panelWriteLimit, panelJson, panelRoute(handler, { write: true }));
 
 app.get('/api/panel/estado', panelLimit, panelRoute(async ({ user, db: d, jobs }) => {
-  const [character, account, shift, stats, fines, arrests, transactions] = await Promise.all([
+  const since = weekAgo();
+  const [character, account, shift, week, fines, arrests, transactions, shifts, ranking, linked] = await Promise.all([
     panel.getCharacter(d, user.id), panel.getAccount(d, user.id), panel.activeShift(d, user.id),
-    panel.shiftStats(d, user.id, weekAgo()), panel.listFines(d, user.id), panel.listArrests(d, user.id), panel.listTransactions(d, user.id),
+    panel.shiftStats(d, user.id, since), panel.listFines(d, user.id), panel.listArrests(d, user.id), panel.listTransactions(d, user.id),
+    panel.listShifts(d, user.id), panel.shiftRanking(d, since), panel.getUserRoblox(d, user.id),
   ]);
   const solicitud = character ? null : await panel.latestApplication(d, user.id);
+  // Roblox: el de la cédula, el vinculado o el de la whitelist (con su foto)
+  const rbxName = character?.roblox_name || linked?.name || solicitud?.roblox?.name || '';
+  const rbx = rbxName ? await lookupRoblox(rbxName).catch(() => null) : null;
+  const roblox = rbxName ? { name: rbx?.name || rbxName, avatar: rbx?.avatar || null } : null;
+  if (Date.now() >= nextRefresh) refreshStats(); // contador de Discord (no se espera)
   return {
-    now: Date.now(), user, modo: dbMode, character, account, shift, stats, fines, arrests, transactions,
+    now: Date.now(), user, modo: dbMode, character, account, shift, stats: week, fines, arrests, transactions, roblox,
+    shifts, ranking: ranking.map(({ _id, ...r }) => ({ ...r, yo: _id === user.id })), online: stats.online,
     solicitud, jobs, jobInfo: publicJobs(JOBS), shiftRules: SHIFT, money: panel.MONEY, options: OPTIONS,
   };
 }));
 
+// Vincular el usuario de Roblox (para la foto antes de tener cédula)
+post('/roblox', async ({ user, db: d }, req) => {
+  const name = typeof req.body?.usuario === 'string' ? req.body.usuario.trim() : '';
+  if (!ROBLOX_USER_RE.test(name)) throw new panel.PanelError(400, 'Usuario de Roblox inválido.', { usuario: 'Usa solo letras, números o _ (3 a 20).' });
+  const roblox = await lookupRoblox(name).catch(() => null);
+  if (!roblox) throw new panel.PanelError(400, 'No existe ese usuario en Roblox.', { usuario: 'No existe ese usuario en Roblox.' });
+  await panel.setRoblox(d, user, roblox);
+  return { roblox: { name: roblox.name, avatar: roblox.avatar } };
+});
 post('/cedula', async ({ user, db: d }, req) => {
   const b = req.body || {};
   let roblox = null;

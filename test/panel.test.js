@@ -166,3 +166,22 @@ test('trabajos según los roles de Discord', () => {
   assert.deepEqual(jobsFor(['4'], roles, custom), ['policia']);
   assert.deepEqual(custom.ems.roles, JOBS.ems.roles, 'un valor vacío no borra los nombres por defecto');
 });
+
+test('historial de turnos, ranking y Roblox vinculado', async () => {
+  const db = await fresh();
+  await citizen(db, ANA);
+  await citizen(db, POLI, { nombre: 'Poli' }, 0.77);
+  for (const [u, mins] of [[ANA, 30], [POLI, 120], [ANA, 45]]) {
+    await P.startShift(db, u.id, 'policia', { jobs: JOBS, allowed: ['policia'], now: NOW });
+    await P.endShift(db, u.id, { jobs: JOBS, now: NOW + mins * 60_000 });
+  }
+  const hist = await P.listShifts(db, ANA.id);
+  assert.equal(hist.length, 2);
+  assert.equal(hist[0].minutes + hist[1].minutes, 75);
+  const rank = await P.shiftRanking(db, NOW - 1);
+  assert.deepEqual(rank.map((r) => [r.nombre, r.minutos, r.turnos]), [['Poli', 120, 1], ['Ana', 75, 2]]);
+  assert.equal(rank[0]._id, POLI.id);
+  assert.equal(await P.getUserRoblox(db, BETO.id), null);
+  await P.setRoblox(db, BETO, { id: 55, name: 'Beto_RBX' });
+  assert.deepEqual(await P.getUserRoblox(db, BETO.id), { id: '55', name: 'Beto_RBX' });
+});
