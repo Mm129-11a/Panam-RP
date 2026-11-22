@@ -416,3 +416,11 @@ a.pn-stat:hover{border-color:#3a4358;transform:translateY(-2px)}
 .pn-tag.blue{background:rgba(76,125,255,.14);border-color:rgba(76,125,255,.4);color:#a9c1ff}
 .pn-tag.gold{background:rgba(245,185,66,.12);border-color:rgba(245,185,66,.4);color:#f7d58a}
 @media (max-width:760px){.pn-den{grid-template-columns:1fr 1fr}}
+
+/* Fotos del stock */
+.pn-item-img{width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:12px;background:#0b0e13}
+.pn-li-img{width:56px;height:42px;object-fit:cover;border-radius:8px;flex-shrink:0;background:#0b0e13}
+.pn-photo{display:flex;align-items:center;gap:12px}
+.pn-photo img,.pn-photo > span{width:96px;height:64px;flex-shrink:0;object-fit:cover;border-radius:10px;border:1px solid var(--p-line);background:#0b0e13;display:grid;place-items:center;color:#5c6478}
+.pn-photo input[type=file]{padding:10px;font-size:13px}
+.pn-item .pn-tag{align-self:flex-start}

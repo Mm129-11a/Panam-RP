@@ -48,7 +48,7 @@
   const head = $('#pn-head');
   const main = $('#pn-main');
   let S = null;
-  const ui = { tab: 'info', work: 'historial', search: null, activity: null, busy: false, flip: false, link: null, shop: null, shopTab: 'vehiculo', just: null, denTipo: null };
+  const ui = { tab: 'info', work: 'historial', search: null, activity: null, busy: false, flip: false, link: null, shop: null, shopTab: 'vehiculo', just: null, denTipo: null, adm: 'datos', admSearch: null, admCases: null, admCat: null, edit: null, photo: null };
 
   // ─── Utilidades ───
   let toastT = 0;
@@ -95,6 +95,7 @@
     banco: () => [`Banco, <em>${esc(handle())}</em>`, 'Depósitos, retiros, transferencias y movimientos'],
     tienda: () => ['Concesionario e <em>inmobiliaria</em>', 'Compra carros y casas con el dinero de tu banco'],
     justicia: () => ['Denuncias y <em>juicios</em>', 'Lo que mandes les llega por mensaje privado a los jueces'],
+    admin: () => ['<em>Administración</em>', S.staff?.admin ? 'Admins: stock de carros y casas, base de datos y casos' : 'Moderadores: base de datos y casos'],
   };
   function renderHead(view) {
     const [title, sub] = TITLES[view]();
@@ -133,16 +134,17 @@
   }
 
   // ─── Pantallas (#inicio, #perfil, #trabajos, #banco) ───
-  const VIEWS = ['inicio', 'perfil', 'trabajos', 'banco', 'tienda', 'justicia'];
+  const VIEWS = ['inicio', 'perfil', 'trabajos', 'banco', 'tienda', 'justicia', 'admin'];
   const currentView = () => { const h = location.hash.slice(1); return VIEWS.includes(h) ? h : 'inicio'; };
 
   function render() {
     const view = currentView();
     renderHead(view);
     const banner = S.modo === 'prueba' ? `<div class="pn-note warn">${ico('alert')}<div>Modo de prueba: falta la base de datos y lo que hagas aquí se borra al reiniciar la web.</div></div>` : '';
-    main.innerHTML = banner + ({ perfil: viewPerfil, trabajos: viewTrabajos, banco: viewBanco, tienda: viewTienda, justicia: viewJusticia }[view] || viewInicio)();
+    main.innerHTML = banner + ({ perfil: viewPerfil, trabajos: viewTrabajos, banco: viewBanco, tienda: viewTienda, justicia: viewJusticia, admin: viewAdmin }[view] || viewInicio)();
     if (view === 'tienda' && !ui.shop) loadShop();
     if (view === 'justicia' && !ui.just) loadJusticia();
+    if (view === 'admin') loadAdmin();
     $$('[data-color]').forEach((el) => el.style.setProperty('--job', el.dataset.color));
     tick();
     if (view === 'trabajos' && ['policia', 'transito'].includes(S.shift?.job) && !ui.activity) loadActivity();
@@ -172,6 +174,7 @@
         ${cat('#banco', 'gold', 'bank', 'Banco', 'Depósitos, retiros y transferencias')}
         ${cat('#tienda', 'purple', 'store', 'Carros y casas', 'Concesionario e inmobiliaria')}
         ${cat('#justicia', 'cyan', 'scale', 'Justicia', 'Denuncias y juicios')}
+        ${S.staff?.mod ? cat('#admin', 'red', 'shield', 'Administración', S.staff.admin ? 'Stock, base de datos y casos' : 'Base de datos y casos') : ''}
         ${cat('/#normativa', 'red', 'book', 'Normativa', 'Reglas del servidor')}
       </div>`;
   }
@@ -438,7 +441,7 @@
         <button type="button" class="${ui.work === 'ranking' ? 'on' : ''}" data-act="work" data-tab="ranking">${ico('trophy')}<span><b>Ranking</b><small>Estadísticas</small></span></button>
       </div>
       ${ui.work === 'ranking' ? ranking() : historial()}
-      ${S.jobs.includes('policia') || S.jobs.includes('transito') ? policeTools() : ''}`;
+      ${['policia', 'transito'].includes(S.shift?.job) ? policeTools() : ''}`;
   }
 
   function historial() {
@@ -464,7 +467,7 @@
     const att = S.shift?.job === 'transito';
     const poli = S.shift?.job === 'policia';
     const duty = att || poli;
-    const unit = S.jobs.includes('transito') && !S.jobs.includes('policia') ? 'ATT' : S.jobs.includes('policia') && !S.jobs.includes('transito') ? 'Policía' : 'Policía o ATT';
+    const unit = att ? 'ATT' : 'Policía';
     const results = ui.search === null ? '' : ui.search.length ? `<ul class="pn-list">${ui.search.map((p) => `<li><span class="pn-li-ico blue">${ico('user')}</span>
         <div><b>${esc(p.nombre)} ${esc(p.apellidos)}</b><small>${esc(p.cedula)} · ${esc(isoBonito(p.nacimiento))} · ${esc(p.nacionalidad)} · Roblox: ${esc(p.roblox_name)}</small>
         <small>${p.multas ? `<span class="pn-tag bad">${p.multas} multa(s) pendiente(s)</span>` : '<span class="pn-tag ok">Sin multas</span>'} ${p.arrestos ? `<span class="pn-tag">${p.arrestos} arresto(s)</span>` : ''} ${(p.placas || []).map((x) => `<span class="pn-plate sm">${esc(x)}</span>`).join(' ')}</small></div>
@@ -478,7 +481,7 @@
         ...act.arrests.map((a) => ({ t: a.created_at, h: `<li><span class="pn-li-ico red">${ico('gavel')}</span><div><b>Arresto · ${esc(a.nombre)} ${esc(a.apellidos)}</b><small>${esc(a.cargos)} · ${fechaHora(a.created_at)}</small></div><div class="pn-li-r"><span class="pn-tag">${a.minutos} min</span></div></li>` })),
       ].sort((a, b) => b.t - a.t).slice(0, 10).map((x) => x.h).join('')}</ul>` : empty('shield', 'Aún no has puesto multas ni arrestos');
     return `<section class="pn-box pn-police ${duty ? '' : 'locked'}">
-      <div class="pn-box-h"><span class="pn-box-ico blue">${ico('shield')}</span><div><b>Herramientas de ${unit}</b><small>${unit === 'ATT' ? 'Buscar ciudadanos y poner multas' : unit === 'Policía' ? 'Buscar ciudadanos y registrar arrestos' : 'Buscar ciudadanos, multas (ATT) y arrestos (Policía)'}</small></div></div>
+      <div class="pn-box-h"><span class="pn-box-ico blue">${ico('shield')}</span><div><b>Herramientas de ${unit}</b><small>${att ? 'Buscar ciudadanos y poner multas' : 'Buscar ciudadanos y registrar arrestos'}</small></div></div>
       ${duty ? '' : `<div class="pn-note warn">${ico('alert')}<div>Inicia tu turno de <b>${unit}</b> para usar estas herramientas.</div></div>`}
       <fieldset ${duty ? '' : 'disabled'}>
         <form data-form="buscar" class="pn-search" novalidate>${ico('search')}
@@ -487,14 +490,14 @@
         </form>
         ${results}
         <div class="pn-two">
-          ${!S.jobs.includes('transito') ? '' : `<form data-form="multa" class="pn-form-box" novalidate>
+          ${!att ? '' : `<form data-form="multa" class="pn-form-box" novalidate>
             <h4>${ico('receipt')}Poner multa (ATT)</h4>
             ${field('m-cedula', 'Cédula', '<input class="ap-input" id="f-m-cedula" name="cedula" maxlength="20" placeholder="8-123-4567" autocomplete="off" required>')}
             ${field('m-motivo', 'Motivo', '<input class="ap-input" id="f-m-motivo" name="motivo" maxlength="200" placeholder="Ej: Exceso de velocidad" required>')}
             ${field('m-monto', `Monto ($${S.money.fineMin}–$${S.money.fineMax.toLocaleString('es-PA')})`, '<input class="ap-input" id="f-m-monto" name="monto" inputmode="numeric" placeholder="Ej: 750" required>')}
             <button class="pn-btn gold" type="submit">Poner multa</button>
           </form>`}
-          ${!S.jobs.includes('policia') ? '' : `<form data-form="arresto" class="pn-form-box" novalidate>
+          ${!poli ? '' : `<form data-form="arresto" class="pn-form-box" novalidate>
             <h4>${ico('gavel')}Registrar arresto</h4>
             ${field('a-cedula', 'Cédula', '<input class="ap-input" id="f-a-cedula" name="cedula" maxlength="20" placeholder="8-123-4567" autocomplete="off" required>')}
             ${field('a-cargos', 'Cargos', '<input class="ap-input" id="f-a-cargos" name="cargos" maxlength="300" placeholder="Ej: Robo a mano armada" required>')}
@@ -559,16 +562,19 @@
       return `${head}<div class="pn-two"><section class="pn-box"><h3 class="pn-h3">Mis vehículos</h3>${v}</section><section class="pn-box"><h3 class="pn-h3">Mis propiedades</h3>${p}</section></div>`;
     }
     const items = sh.catalog.filter((x) => x.tipo === ui.shopTab);
+    if (!items.length) return `${head}${empty(ui.shopTab === 'casa' ? 'home' : 'car', 'Por ahora no hay nada a la venta aquí. Vuelve pronto.')}`;
     const colors = sh.colors.map((c) => `<option>${esc(c)}</option>`).join('');
     return `${head}<div class="pn-shop">${items.map((x) => {
-      const can = S.account.banco >= x.precio;
+      const agotado = x.stock !== null && x.stock !== undefined && x.stock <= 0;
+      const can = !agotado && S.account.banco >= x.precio;
       return `<form class="pn-item" data-form="comprar" novalidate>
         <input type="hidden" name="id" value="${x.id}">
-        <span class="pn-item-ico ${x.tipo === 'vehiculo' ? 'blue' : 'green'}">${ico(x.tipo === 'vehiculo' ? 'car' : 'home')}</span>
+        ${x.imagen ? `<img class="pn-item-img" src="${esc(x.imagen)}" alt="" loading="lazy">` : `<span class="pn-item-ico ${x.tipo === 'vehiculo' ? 'blue' : 'green'}">${ico(x.tipo === 'vehiculo' ? 'car' : 'home')}</span>`}
         <b>${esc(x.nombre)}</b><small>${esc(x.detalle || '')}</small>
         <strong>${money(x.precio)}</strong>
+        ${x.stock === null || x.stock === undefined ? '' : `<span class="pn-tag ${agotado ? 'bad' : 'ok'}">${agotado ? 'Agotado' : `En stock: ${x.stock}`}</span>`}
         ${x.tipo === 'vehiculo' ? `<div class="ap-select"><select class="ap-input" name="color" aria-label="Color" required><option value="">Color…</option>${colors}</select></div>` : ''}
-        <button class="pn-btn ${can ? 'gold' : 'ghost'}" type="submit" ${can ? '' : 'disabled'}>${can ? 'Comprar' : 'Saldo insuficiente'}</button>
+        <button class="pn-btn ${can ? 'gold' : 'ghost'}" type="submit" ${can ? '' : 'disabled'}>${agotado ? 'Agotado' : can ? 'Comprar' : 'Saldo insuficiente'}</button>
       </form>`;
     }).join('')}</div>`;
   }
@@ -620,9 +626,97 @@
     return `${denuncia}${juicio}<section class="pn-box"><h3 class="pn-h3">Mis casos</h3>${mine}</section>`;
   }
 
+  // ─── Administración (moderadores y admins) ───
+  async function loadAdmin() {
+    if (ui.adm === 'casos' && !ui.admCases) {
+      try { ui.admCases = (await api('/api/panel/admin/casos')).cases; } catch (e) { ui.admCases = []; toast(e.error); }
+      if (currentView() === 'admin') render();
+    }
+    if (ui.adm === 'tienda' && S.staff?.admin && !ui.admCat) {
+      try { ui.admCat = (await api('/api/panel/admin/catalogo')).catalog; } catch (e) { ui.admCat = []; toast(e.error); }
+      if (currentView() === 'admin') render();
+    }
+  }
+  function viewAdmin() {
+    if (!S.staff?.mod) return `<div class="pn-note warn">${ico('alert')}<div>Esta sección es solo para moderadores y admins.</div></div>`;
+    if (ui.adm === 'tienda' && !S.staff.admin) ui.adm = 'datos';
+    const tabs = [['datos', 'db', 'Base de datos', 'Buscar ciudadanos'], ['casos', 'scale', 'Casos', 'Denuncias y juicios'], ...(S.staff.admin ? [['tienda', 'store', 'Stock', 'Carros y casas']] : [])];
+    const head = `<div class="pn-bigtabs ${tabs.length === 3 ? 'three' : ''}">${tabs.map(([k, i, t, sub]) => `<button type="button" class="${ui.adm === k ? 'on' : ''}" data-act="adm-tab" data-tab="${k}">${ico(i)}<span><b>${t}</b><small>${sub}</small></span></button>`).join('')}</div>`;
+    if (ui.adm === 'casos') {
+      const C = ui.admCases;
+      const list = !C ? '<p class="pn-muted">Cargando…</p>' : C.length ? `<ul class="pn-list">${C.map((c) => {
+        const [cls, txt] = ESTADO[c.estado] || ['', c.estado];
+        return `<li><span class="pn-li-ico ${c.origen === 'juicio' ? 'blue' : 'gold'}">${ico(c.origen === 'juicio' ? 'gavel' : 'receipt')}</span>
+          <div><b>#${c.id} · ${c.origen === 'juicio' ? 'Juicio' : 'Denuncia'} · ${esc(c.tipo)}</b><small>Contra ${esc(c.acusado)} · por ${esc(c.denunciante || '—')} · ${fechaHora(c.created_at)}</small>
+          <small>Juez ${c.juez_id ? '✓' : '—'} · Fiscal ${c.fiscal_id ? '✓' : '—'} · Abogado ${c.abogado_id ? '✓' : '—'}${c.motivo ? ` · Motivo: ${esc(c.motivo)}` : ''}</small></div>
+          <div class="pn-li-r"><span class="pn-tag ${cls}">${txt}</span></div></li>`;
+      }).join('')}</ul>` : empty('scale', 'No hay casos todavía');
+      return `${head}<section class="pn-box"><h3 class="pn-h3">Todos los casos</h3>${list}</section>`;
+    }
+    if (ui.adm === 'tienda') {
+      const items = ui.admCat;
+      const e = ui.edit || {};
+      const form = `<form data-form="item" class="pn-form-box" novalidate>
+          <h4>${ico(e.id ? 'swap' : 'store')}${e.id ? `Editar #${e.id}` : 'Agregar al stock'}</h4>
+          ${e.id ? `<input type="hidden" name="id" value="${e.id}">` : ''}
+          <div class="pn-two">
+            ${field('i-tipo', 'Tipo', `<div class="ap-select"><select class="ap-input" id="f-i-tipo" name="tipo" required><option value="vehiculo"${e.tipo !== 'casa' ? ' selected' : ''}>🚗 Carro / moto</option><option value="casa"${e.tipo === 'casa' ? ' selected' : ''}>🏠 Casa / local</option></select></div>`)}
+            ${field('i-nombre', 'Nombre', `<input class="ap-input" id="f-i-nombre" name="nombre" maxlength="60" value="${esc(e.nombre || '')}" placeholder="Ej: Toyota Hilux 2024" required>`)}
+            ${field('i-precio', 'Precio ($)', `<input class="ap-input" id="f-i-precio" name="precio" inputmode="numeric" value="${e.precio ?? ''}" placeholder="Ej: 45000" required>`)}
+            ${field('i-stock', 'En stock (vacío = sin límite)', `<input class="ap-input" id="f-i-stock" name="stock" inputmode="numeric" value="${e.stock ?? ''}" placeholder="Ej: 3">`)}
+          </div>
+          ${field('i-detalle', 'Descripción', `<input class="ap-input" id="f-i-detalle" name="detalle" maxlength="140" value="${esc(e.detalle || '')}" placeholder="Ej: 4x4, doble cabina">`)}
+          <div class="ap-field"><label class="ap-label" for="f-i-foto">Foto</label>
+            <div class="pn-photo">${ui.photo ? `<img src="${esc(ui.photo)}" alt="">` : e.imagen ? `<img src="${esc(e.imagen)}" alt="">` : `<span>${ico('store')}</span>`}
+              <input class="ap-input" id="f-i-foto" type="file" accept="image/*" data-photo></div><div class="pn-err" data-err="foto"></div></div>
+          <div class="pn-row"><button class="pn-btn gold" type="submit">${e.id ? 'Guardar cambios' : 'Agregar'}</button>${e.id ? '<button class="pn-btn ghost" type="button" data-act="item-nuevo">Cancelar</button>' : ''}</div>
+        </form>`;
+      const list = !items ? '<p class="pn-muted">Cargando…</p>' : items.length ? `<ul class="pn-list">${items.map((x) => `<li>
+          ${x.imagen ? `<img class="pn-li-img" src="${esc(x.imagen)}" alt="">` : `<span class="pn-li-ico ${x.tipo === 'vehiculo' ? 'blue' : 'green'}">${ico(x.tipo === 'vehiculo' ? 'car' : 'home')}</span>`}
+          <div><b>${esc(x.nombre)}</b><small>${money(x.precio)} · ${x.stock === null || x.stock === undefined ? 'sin límite' : `stock ${x.stock}`}${x.detalle ? ` · ${esc(x.detalle)}` : ''}</small></div>
+          <div class="pn-li-r"><button class="pn-btn ghost sm" type="button" data-act="item-editar" data-id="${x.id}">Editar</button><button class="pn-btn ghost sm" type="button" data-act="item-quitar" data-id="${x.id}">Quitar</button></div></li>`).join('')}</ul>` : empty('store', 'No hay nada en stock');
+      return `${head}<div class="pn-two"><section class="pn-box">${form}</section><section class="pn-box"><h3 class="pn-h3">En venta</h3><p class="pn-muted">Cada compra les llega por DM a los admins.</p>${list}</section></div>`;
+    }
+    const R = ui.admSearch;
+    const results = R === null ? '' : R.length ? `<ul class="pn-list">${R.map((p) => `<li><span class="pn-li-ico blue">${ico('user')}</span>
+        <div><b>${esc(p.nombre)} ${esc(p.apellidos)}</b><small>${esc(p.cedula)} · ${esc(p.nacionalidad)} · Roblox: ${esc(p.roblox_name)}</small>
+        <small>${p.multas ? `<span class="pn-tag bad">${p.multas} multa(s)</span>` : ''} ${p.arrestos ? `<span class="pn-tag">${p.arrestos} arresto(s)</span>` : ''} ${(p.placas || []).map((x) => `<span class="pn-plate sm">${esc(x)}</span>`).join(' ')}</small></div>
+        <div class="pn-li-r"><button class="pn-btn blue sm" type="button" data-act="ficha" data-admin="1" data-cedula="${esc(p.cedula)}">Ver ficha</button></div></li>`).join('')}</ul>` : empty('search', 'No se encontró a nadie');
+    return `${head}<section class="pn-box"><div class="pn-box-h"><span class="pn-box-ico blue">${ico('db')}</span><div><b>Base de datos</b><small>Nombre, cédula, usuario de Roblox o placa</small></div></div>
+      <form data-form="adm-buscar" class="pn-search" novalidate>${ico('search')}
+        <input class="ap-input" name="q" maxlength="40" placeholder="Nombre, cédula, usuario de Roblox o placa" autocomplete="off" aria-label="Buscar ciudadano">
+        <button class="pn-btn gold" type="submit">Buscar</button></form>${results}</section>`;
+  }
+
+  // Foto: se achica en el navegador antes de subirla (máx. 1000 px, JPG)
+  function readPhoto(file) {
+    return new Promise((resolve, reject) => {
+      if (!file || !/^image\//.test(file.type)) return reject(new Error('Elige una imagen.'));
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const k = Math.min(1, 1000 / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        let q = 0.85; let out = c.toDataURL('image/jpeg', q);
+        while (out.length > 1_150_000 && q > 0.4) { q -= 0.15; out = c.toDataURL('image/jpeg', q); }
+        resolve(out);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No pude leer esa imagen.')); };
+      img.src = url;
+    });
+  }
+  document.addEventListener('change', (ev) => {
+    const inp = ev.target.closest('input[data-photo]');
+    if (!inp) return;
+    readPhoto(inp.files?.[0]).then((data) => { ui.photo = data; const box = inp.closest('.pn-photo'); const old = box.querySelector('img,span'); const im = new Image(); im.src = data; im.alt = ''; old ? old.replaceWith(im) : box.prepend(im); }).catch((e) => toast(e.message));
+  });
+
   // ─── Ficha de la base de datos (Policía / ATT) ───
-  async function openFicha(cedula) {
-    const r = await api(`/api/panel/policia/ficha?cedula=${encodeURIComponent(cedula)}`);
+  async function openFicha(cedula, admin = false) {
+    const r = await api(`/api/panel/${admin ? 'admin' : 'policia'}/ficha?cedula=${encodeURIComponent(cedula)}`);
     const p = r.persona;
     const list = (rows, fn, none) => (rows.length ? `<ul class="pn-list">${rows.map(fn).join('')}</ul>` : `<p class="pn-muted">${none}</p>`);
     const LIC = { conducir: 'Conducir', armas: 'Armas' };
@@ -746,6 +840,16 @@
         toast(`${kind === 'juicio' ? `Juicio #${r.id} enviado` : `Denuncia #${r.id} enviada`} a ${r.jueces} juez(es) por mensaje privado.`);
         ui.just = null; ui.denTipo = null;
         render();
+      } else if (kind === 'adm-buscar') {
+        ui.admSearch = (await api(`/api/panel/admin/buscar?q=${encodeURIComponent(f.q || '')}`)).results;
+        render();
+        const q = $('form[data-form="adm-buscar"] input');
+        if (q) q.value = f.q || '';
+      } else if (kind === 'item') {
+        const r = await api('/api/panel/admin/catalogo/guardar', { id: f.id ? Number(f.id) : undefined, tipo: f.tipo, nombre: f.nombre, precio: f.precio, stock: f.stock, detalle: f.detalle, foto: ui.photo || undefined });
+        toast(f.id ? 'Cambios guardados.' : 'Agregado al stock.');
+        ui.admCat = r.catalog; ui.edit = null; ui.photo = null; ui.shop = null;
+        render();
       } else if (kind === 'comprar') {
         const r = await api('/api/panel/tienda/comprar', { id: Number(f.id), color: f.color });
         toast(r.bought.tipo === 'vehiculo' ? `¡Compraste ${r.bought.nombre}! Placa ${r.bought.placa}` : `¡Compraste ${r.bought.nombre}! ${r.bought.direccion}`);
@@ -780,6 +884,9 @@
     if (act === 'tab') { ui.tab = b.dataset.tab; render(); if (b.classList.contains('pn-short')) $('#pn-exp')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     if (act === 'work') { ui.work = b.dataset.tab; render(); return; }
     if (act === 'tienda-tab') { ui.shopTab = b.dataset.tab; render(); return; }
+    if (act === 'adm-tab') { ui.adm = b.dataset.tab; render(); return; }
+    if (act === 'item-editar') { ui.edit = (ui.admCat || []).find((x) => String(x.id) === b.dataset.id) || null; ui.photo = null; render(); $('form[data-form="item"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    if (act === 'item-nuevo') { ui.edit = null; ui.photo = null; render(); return; }
     if (act === 'den-tipo') { ui.denTipo = b.dataset.tipo || null; render(); if (ui.denTipo) setTimeout(() => $('form[data-form="denuncia"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); return; }
     if (act === 'tienda-recargar') { ui.shop = null; render(); return; }
     if (act === 'copiar') { navigator.clipboard?.writeText(ui.link?.code || '').then(() => toast('Código copiado'), () => toast('Mantén presionado el código para copiarlo')); return; }
@@ -811,7 +918,13 @@
         toast(`¡Roblox vinculado: ${r.user.name}!`);
         await refresh();
       } else if (act === 'ficha') {
-        await openFicha(b.dataset.cedula);
+        await openFicha(b.dataset.cedula, b.dataset.admin === '1');
+      } else if (act === 'item-quitar') {
+        if (!window.confirm('¿Quitar este artículo de la venta?')) return;
+        const r = await api('/api/panel/admin/catalogo/quitar', { id: Number(b.dataset.id) });
+        ui.admCat = r.catalog; ui.shop = null;
+        toast('Quitado de la venta.');
+        render();
       } else if (act === 'pagar') {
         await api('/api/panel/multas/pagar', { id: Number(b.dataset.id) });
         toast('Multa pagada.');

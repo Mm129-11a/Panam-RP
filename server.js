@@ -90,7 +90,7 @@ const ipOf = (req) => {
   return ip;
 };
 app.use(securityHeaders({ https: HTTPS }));
-const PANEL_POSTS = ['/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/policia/multa', '/policia/arresto', '/tienda/comprar', '/justicia/denuncia', '/justicia/juicio'];
+const PANEL_POSTS = ['/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/policia/multa', '/policia/arresto', '/tienda/comprar', '/justicia/denuncia', '/justicia/juicio', '/admin/catalogo/guardar', '/admin/catalogo/quitar'];
 app.use(methodGuard(['/logout', '/api/solicitud', '/api/discord/interactions', '/api/roblox/vincular', '/api/roblox/comprobar', ...PANEL_POSTS.map((p) => `/api/panel${p}`)]));
 app.use(rateLimit({ windowMs: 60_000, max: 300, keyFn: ipOf }));
 
@@ -904,8 +904,18 @@ async function panelContext(req) {
   const info = await memberInfo(user.id);
   const roles = bot ? await bot.guildRoles(HOME_GUILD) : [];
   const jobs = jobsFor(info?.roles || [], roles, JOBS);
-  return { user, db: store, jobs };
+  return { user, db: store, jobs, staff: staffRank(info?.roles || []) };
 }
+
+// Moderadores y admins de la web (por rol de Discord)
+const WEB_MODS = ['1561821550557265930', '1561818194107301981', '1561818055053410394'];
+const WEB_ADMINS = ['1561816462186909736', '1561821788093157407', '1560738331195736134', '1561816254241579008'];
+function staffRank(roles) {
+  const admin = roles.some((x) => WEB_ADMINS.includes(x));
+  return { admin, mod: admin || roles.some((x) => WEB_MODS.includes(x)) };
+}
+const needMod = (staff) => { if (!staff?.mod) throw new panel.PanelError(403, 'Solo moderadores y admins.'); };
+const needAdmin = (staff) => { if (!staff?.admin) throw new panel.PanelError(403, 'Solo admins.'); };
 
 function panelRoute(handler, { write = false } = {}) {
   return async (req, res) => {
@@ -927,7 +937,7 @@ function panelRoute(handler, { write = false } = {}) {
 const panelJson = express.json({ limit: '10kb' });
 const post = (p, handler) => app.post(`/api/panel${p}`, panelLimit, panelWriteLimit, panelJson, panelRoute(handler, { write: true }));
 
-app.get('/api/panel/estado', panelLimit, panelRoute(async ({ user, db: d, jobs }) => {
+app.get('/api/panel/estado', panelLimit, panelRoute(async ({ user, db: d, jobs, staff }) => {
   const since = weekAgo();
   const [character, account, shift, week, fines, arrests, transactions, shifts, ranking, linked] = await Promise.all([
     panel.getCharacter(d, user.id), panel.getAccount(d, user.id), panel.activeShift(d, user.id),
@@ -941,7 +951,7 @@ app.get('/api/panel/estado', panelLimit, panelRoute(async ({ user, db: d, jobs }
   const roblox = rbxName ? { name: rbx?.name || rbxName, avatar: rbx?.avatar || null, verified: Boolean(character || linked?.verified) } : null;
   if (Date.now() >= nextRefresh) refreshStats(); // contador de Discord (no se espera)
   return {
-    now: Date.now(), user, modo: dbMode, character, account, shift, stats: week, fines, arrests, transactions, roblox,
+    now: Date.now(), user, modo: dbMode, staff, character, account, shift, stats: week, fines, arrests, transactions, roblox,
     shifts, ranking: ranking.map(({ _id, ...r }) => ({ ...r, yo: _id === user.id })), online: stats.online, erlc: await erlcStatus(),
     solicitud, jobs, jobInfo: publicJobs(JOBS), shiftRules: SHIFT, money: panel.MONEY, options: OPTIONS,
   };
@@ -1008,7 +1018,64 @@ post('/justicia/juicio', async ({ user, db: d, jobs }, req) => {
 app.get('/api/panel/tienda', panelLimit, panelRoute(async ({ user, db: d }) => ({
   catalog: await market.listCatalog(d), mine: await market.myAssets(d, user.id), colors: market.COLORS,
 })));
-post('/tienda/comprar', async ({ user, db: d }, req) => market.buy(d, user.id, { id: req.body?.id, color: req.body?.color }));
+post('/tienda/comprar', async ({ user, db: d }, req) => {
+  const out = await market.buy(d, user.id, { id: req.body?.id, color: req.body?.color });
+  notifyPurchase(d, user, out.bought).catch((err) => console.error('[tienda] aviso a admins:', err.message));
+  return out;
+});
+
+// Cada compra les llega por DM a los admins (para entregarla dentro del juego)
+async function notifyPurchase(d, user, b) {
+  if (!bot) return;
+  const c = await panel.getCharacter(d, user.id);
+  const admins = await membersWithRoles(WEB_ADMINS);
+  const embed = {
+    title: `🛒 Nueva compra: ${b.nombre}`, color: b.tipo === 'vehiculo' ? 0x4c7dff : 0x22c55e,
+    fields: [
+      { name: 'Comprador', value: `${c ? `${c.nombre} ${c.apellidos}` : user.name} (<@${user.id}>)`, inline: true },
+      { name: 'Cédula', value: c?.cedula || '—', inline: true },
+      { name: 'Roblox', value: c?.roblox_name || '—', inline: true },
+      { name: 'Precio', value: `$${Number(b.precio).toLocaleString('es-PA')}`, inline: true },
+      ...(b.tipo === 'vehiculo' ? [{ name: 'Placa', value: `\`${b.placa}\``, inline: true }, { name: 'Color', value: b.color, inline: true }] : [{ name: 'Dirección', value: b.direccion, inline: true }]),
+    ],
+    footer: { text: 'Panamá RP · Concesionario e inmobiliaria de la web' }, timestamp: new Date().toISOString(),
+  };
+  for (const id of admins) await bot.dm(id, { embeds: [embed] }).catch(() => {});
+}
+
+// ─── Administración (moderadores y admins) ───
+app.get('/api/panel/admin/buscar', panelLimit, panelRoute(async ({ user, db: d, staff }, req) => {
+  needMod(staff);
+  return { results: await panel.searchCitizens(d, user.id, req.query.q, { staff: true }) };
+}));
+app.get('/api/panel/admin/ficha', panelLimit, panelRoute(async ({ user, db: d, staff }, req) => {
+  needMod(staff);
+  const rec = await panel.citizenRecord(d, user.id, req.query.cedula, { staff: true });
+  const avatar = rec.persona.roblox_name ? (await lookupRoblox(rec.persona.roblox_name).catch(() => null))?.avatar || null : null;
+  return { ...rec, avatar };
+}));
+app.get('/api/panel/admin/casos', panelLimit, panelRoute(async ({ db: d, staff }) => {
+  needMod(staff);
+  return { cases: await d.query('SELECT id, origen, tipo, estado, acusado, denunciante, autor_id, juez_id, fiscal_id, abogado_id, motivo, created_at FROM cases ORDER BY id DESC LIMIT 50', []) };
+}));
+app.get('/api/panel/admin/catalogo', panelLimit, panelRoute(async ({ db: d, staff }) => {
+  needAdmin(staff);
+  return { catalog: await market.listCatalog(d) };
+}));
+// Guardar carro o casa (con foto opcional): JSON más grande por la foto
+app.post('/api/panel/admin/catalogo/guardar', panelLimit, panelWriteLimit, express.json({ limit: '1300kb' }), panelRoute(async ({ user, db: d, staff }, req) => {
+  needAdmin(staff);
+  const id = await market.saveItem(d, req.body || {});
+  if (req.body?.foto) await market.setImage(d, id, req.body.foto);
+  await d.run("INSERT INTO bot_logs (tipo, actor_id, detalle, created_at) VALUES ('catalogo', $1, $2, $3)", [user.id, `${req.body?.id ? 'Editó' : 'Agregó'} #${id} ${String(req.body?.nombre || '').slice(0, 60)}`, Date.now()]);
+  return { id, catalog: await market.listCatalog(d) };
+}, { write: true }));
+post('/admin/catalogo/quitar', async ({ user, db: d, staff }, req) => {
+  needAdmin(staff);
+  await market.removeItem(d, req.body?.id);
+  await d.run("INSERT INTO bot_logs (tipo, actor_id, detalle, created_at) VALUES ('catalogo', $1, $2, $3)", [user.id, `Quitó #${Number(req.body?.id)}`, Date.now()]);
+  return { catalog: await market.listCatalog(d) };
+});
 
 app.get('/api/panel/policia/actividad', panelLimit, panelRoute(async ({ user, db: d, jobs }) => {
   if (!jobs.includes('policia') && !jobs.includes('transito')) throw new panel.PanelError(403, 'No tienes el rol de Policía ni de ATT.');
@@ -1016,6 +1083,18 @@ app.get('/api/panel/policia/actividad', panelLimit, panelRoute(async ({ user, db
 }));
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'no_encontrado' }));
+
+// Fotos de carros y casas (las sube un admin)
+app.get('/img/catalogo/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const d = Number.isSafeInteger(id) ? await getDb() : null;
+  const img = d ? await market.getImage(d, id).catch(() => null) : null;
+  if (!img) return res.status(404).end();
+  res.setHeader('Content-Type', img.mime);
+  res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.end(img.body);
+});
 
 app.get('/healthz', (req, res) => res.type('text').send('ok'));
 
