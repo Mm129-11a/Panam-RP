@@ -22,7 +22,7 @@ import * as panel from './lib/panel.js';
 import { buildCommands, COMMAND_LIST, COMMAND_NAMES, handleCommand, sameCommands } from './lib/commands.js';
 import { startGateway } from './lib/gateway.js';
 import * as market from './lib/market.js';
-import { OLD_NAMES, COMPONENT_RE, commandModal, componentModal, autocomplete as oldAutocomplete, runOld, runComponent, housekeeping, getCfg as botCfg } from './lib/oldbot.js';
+import { runOld, runComponent, housekeeping, getCfg as botCfg } from './lib/oldbot.js';
 import { JUSTICE_RE, justiceModal, runJustice } from './lib/justicia.js';
 import { createErlc } from './lib/erlc.js';
 import { fetchRobloxProfile, hasCode, LINK_TTL, makeCode } from './lib/robloxlink.js';
@@ -716,7 +716,7 @@ async function syncCommands() {
   const global = await bot.call('GET', `/applications/${CLIENT_ID}/commands`);
   if (global.ok && Array.isArray(global.data)) {
     OLD_COMMANDS = global.data.map((c) => c.name);
-    if (OLD_COMMANDS.length) console.log(`Comandos de antes (${OLD_COMMANDS.length}): los contesta la web con la misma base de datos`);
+    if (OLD_COMMANDS.length) console.log(`Comandos de antes (${OLD_COMMANDS.length}): los contesta el bot de antes (la web no los toca)`);
   }
 }
 let OLD_COMMANDS = [];
@@ -729,32 +729,16 @@ const thinking = { type: 5, data: { flags: 64 } }; // "El bot está pensando…"
 async function answerInteraction(interaction) {
   const name = interaction.data?.name;
   const cid = String(interaction.data?.custom_id || '');
-  const u = interaction.member?.user || interaction.user || {};
-  const lite = { me: { id: u.id, name: u.global_name || u.username || '' } };
   const later = (kind) => ({ response: thinking, after: () => runInteraction(interaction, kind).catch((err) => console.error('[comando]', err.message)) });
 
-  if (interaction.type === 4) { // autocompletar (/config … clave)
-    return { response: { type: 8, data: { choices: name === 'config' ? oldAutocomplete(interaction) : [] } } };
-  }
-  if (interaction.type === 2) {
-    if (OLD_NAMES.includes(name)) {
-      const modal = commandModal(interaction, lite);
-      return modal ? { response: { type: 9, data: modal } } : later('old');
-    }
-    if (!COMMAND_NAMES.includes(name)) console.log(`[comando] desconocido: /${name}`);
-    return later('web');
-  }
+  // Los comandos de antes (y todo lo que no es de la web) los contesta el bot de antes, sin tocarlos
+  if (interaction.type === 4) return null;
+  if (interaction.type === 2) return COMMAND_NAMES.includes(name) ? later('web') : null;
   if ((interaction.type === 3 || interaction.type === 5) && JUSTICE_RE.test(cid)) {
     const modal = justiceModal(interaction);
     return modal ? { response: { type: 9, data: modal } } : later('justice');
   }
-  if ((interaction.type === 3 || interaction.type === 5) && COMPONENT_RE.test(cid)) {
-    const modal = componentModal(interaction);
-    return modal ? { response: { type: 9, data: modal } } : later('component');
-  }
-  if ((interaction.type === 3 || interaction.type === 5) && !cid.startsWith('wl:')) {
-    return { response: { type: 4, data: { flags: 64, content: '❌ Este botón es del sistema anterior y ya no funciona. Pide al staff que lo vuelva a publicar (con /config canal).' } } };
-  }
+  if ((interaction.type === 3 || interaction.type === 5) && !cid.startsWith('wl:')) return null;
   let roles = [];
   if (interaction.type !== 1 && interaction.guild_id) {
     try { roles = await staffRoleIds(interaction.guild_id); } catch { roles = []; }
@@ -766,7 +750,9 @@ async function answerInteraction(interaction) {
 // Por el gateway: Discord manda las interacciones a los dos bots; la web contesta solo las suyas.
 async function onGatewayInteraction(interaction) {
   if (!interaction?.id || !interaction.token) return;
-  const { response, after } = await answerInteraction(interaction);
+  const answer = await answerInteraction(interaction);
+  if (!answer) return; // es del bot de antes
+  const { response, after } = answer;
   const r = await discordFetch(`${API}/interactions/${interaction.id}/${encodeURIComponent(interaction.token)}/callback`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(response),
   }).catch((err) => ({ ok: false, status: 0, err }));
@@ -777,37 +763,6 @@ async function onGatewayInteraction(interaction) {
   after?.();
 }
 
-
-// Lee los mensajes que dejó el bot de antes en los canales (para copiar sus respuestas tal cual).
-async function scanOldBotMessages() {
-  const me = await bot.call('GET', '/users/@me');
-  const botId = me.ok ? me.data?.id : CLIENT_ID;
-  const ch = await bot.call('GET', `/guilds/${HOME_GUILD}/channels`);
-  if (!ch.ok || !Array.isArray(ch.data)) return console.log(`[viejo] no pude leer los canales (${ch.status})`);
-  const seen = new Set();
-  let count = 0;
-  for (const c of ch.data.filter((x) => x.type === 0 || x.type === 5)) {
-    await new Promise((r) => setTimeout(r, 400));
-    const r = await bot.call('GET', `/channels/${c.id}/messages?limit=100`);
-    if (!r.ok || !Array.isArray(r.data)) continue;
-    for (const m of r.data) {
-      if (m.author?.id !== botId) continue;
-      const cmd = m.interaction_metadata?.name || m.interaction?.name || '';
-      const key = `${cmd}|${(m.embeds?.[0]?.title || m.content || '').slice(0, 50)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const slim = {
-        canal: c.name, cmd, fecha: m.timestamp, content: (m.content || '').slice(0, 400),
-        embeds: (m.embeds || []).map((e) => ({ title: e.title, description: (e.description || '').slice(0, 700), color: e.color, url: e.url, author: e.author?.name, fields: (e.fields || []).map((f) => [f.name, (f.value || '').slice(0, 160), Boolean(f.inline)]), image: e.image?.url, thumbnail: e.thumbnail?.url, footer: e.footer?.text, timestamp: Boolean(e.timestamp) })),
-        components: (m.components || []).map((row) => (row.components || []).map((b) => ({ type: b.type, style: b.style, label: b.label, emoji: b.emoji?.name, custom_id: b.custom_id, url: b.url, placeholder: b.placeholder }))),
-        files: (m.attachments || []).map((a) => a.filename),
-      };
-      console.log(`[viejo] ${JSON.stringify(slim).slice(0, 3500)}`);
-      if (++count >= 120) return console.log('[viejo] (tope de 120 mensajes)');
-    }
-  }
-  console.log(`[viejo] mensajes del bot de antes encontrados: ${count}`);
-}
 
 // En modo gateway, la Interactions Endpoint URL tiene que estar vacía (si no, Discord no manda nada
 // por el gateway y el bot viejo se queda sin sus comandos). Solo se borra si es la de esta web.
@@ -836,9 +791,10 @@ app.post('/api/discord/interactions', express.raw({ type: () => true, limit: '20
   let interaction;
   try { interaction = JSON.parse(req.body.toString('utf8')); } catch { return res.status(400).json({ error: 'JSON inválido.' }); }
 
-  const { response, after } = await answerInteraction(interaction);
-  res.json(response); // Discord exige respuesta en menos de 3 s; lo demás va después
-  after?.();
+  const answer = await answerInteraction(interaction);
+  if (!answer) return res.json({ type: 4, data: { flags: 64, content: 'Este comando no es de la web.' } });
+  res.json(answer.response); // Discord exige respuesta en menos de 3 s; lo demás va después
+  answer.after?.();
 });
 
 // Enlace corto para añadir el bot al servidor con los permisos justos.
@@ -1041,7 +997,7 @@ app.listen(PORT, () => {
   if (BOT_TOKEN_RAW && !BOT_TOKEN) console.log('DISCORD_BOT_TOKEN no tiene el formato de un token de bot.');
   if (process.env.DISCORD_PUBLIC_KEY && !PUBLIC_KEY) console.log('DISCORD_PUBLIC_KEY no es válida (deben ser 64 caracteres).');
   console.log(DISCORD_MODE === 'gateway'
-    ? 'Comandos y botones: por el gateway (la web contesta los 41 de antes y los nuevos)'
+    ? 'Comandos y botones: por el gateway (la web contesta solo los suyos; los de antes, el bot de antes)'
     : `Comandos y botones: por la Interactions Endpoint URL ${BASE_URL}/api/discord/interactions`);
   console.log(`Rol al aceptar: ${WHITELIST_ROLE || 'ninguno (falta WHITELIST_ROLE)'}`);
   getDb();
@@ -1080,7 +1036,6 @@ app.listen(PORT, () => {
         if (t === 'READY' && !gatewayOnce) {
           gatewayOnce = true;
           releaseInteractionsUrl().catch((err) => console.error('[gateway]', err.message));
-          setTimeout(() => scanOldBotMessages().catch((err) => console.error('[viejo]', err.message)), 15_000);
         }
         if (t === 'INTERACTION_CREATE') onGatewayInteraction(d).catch((err) => console.error('[gateway]', err.message));
       },
