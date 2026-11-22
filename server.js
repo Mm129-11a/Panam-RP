@@ -24,7 +24,7 @@ import { startGateway } from './lib/gateway.js';
 import * as market from './lib/market.js';
 import { runOld, runComponent, housekeeping, getCfg as botCfg } from './lib/oldbot.js';
 import { JUSTICE_RE, justiceModal, runJustice, submitCase, listMyCases, DENUNCIAS } from './lib/justicia.js';
-import { mirrorOldCommand } from './lib/mirror.js';
+import { mirrorOldCommand, ARREST_CHANNEL, ARREST_ROLE } from './lib/mirror.js';
 import { createErlc } from './lib/erlc.js';
 import { fetchRobloxProfile, hasCode, LINK_TTL, makeCode } from './lib/robloxlink.js';
 
@@ -984,8 +984,31 @@ post('/policia/multa', async ({ user, db: d, jobs }, req) => {
 });
 post('/policia/arresto', async ({ user, db: d, jobs }, req) => {
   if (!hasPolice(jobs)) throw new panel.PanelError(403, 'No tienes rol de Policía (Policía Nacional, Aeronaval o Senafront).');
-  return { arrest: await panel.registerArrest(d, user.id, req.body || {}) };
+  const { targetId, ...arrest } = await panel.registerArrest(d, user.id, req.body || {});
+  announceWebArrest(user, arrest, targetId).catch((err) => console.error('[arresto] aviso:', err.message));
+  return { arrest };
 });
+
+// Arresto hecho en la web: sale en el canal de arrestos y se le da el rol de arrestado
+async function announceWebArrest(user, a, targetId) {
+  if (!bot) return;
+  await bot.addRole(HOME_GUILD, targetId, ARREST_ROLE, `Arresto registrado en la web por ${user.name || user.id}`);
+  await bot.postMessage(ARREST_CHANNEL, {
+    content: `<@${targetId}>`,
+    allowed_mentions: { users: [targetId] },
+    embeds: [{
+      title: '🚔 Arresto', color: 0xef4444,
+      fields: [
+        { name: 'Ciudadano', value: `${a.a} (<@${targetId}>)`, inline: true },
+        { name: 'Cédula', value: a.cedula, inline: true },
+        { name: 'Tiempo', value: `${a.minutos} min`, inline: true },
+        { name: 'Cargos', value: String(a.cargos).slice(0, 1024) },
+        { name: 'Oficial', value: `${a.oficial} (<@${user.id}>)`, inline: true },
+      ],
+      footer: { text: 'Registrado en el panel web de Panamá RP' }, timestamp: new Date().toISOString(),
+    }],
+  });
+}
 app.get('/api/panel/policia/buscar', panelLimit, panelRoute(async ({ user, db: d, jobs }, req) => {
   if (!hasPolice(jobs) && !jobs.includes('transito')) throw new panel.PanelError(403, 'No tienes rol de Policía ni de ATT.');
   return { results: await panel.searchCitizens(d, user.id, req.query.q) };

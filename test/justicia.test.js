@@ -20,7 +20,7 @@ function env(db) {
   };
 }
 // Contexto de un botón apretado en un DM
-const ctxOf = (e, id) => ({ ...e, me: { id, name: `u${id}` }, roles: MEMBERS[id] || [], permissions: '0', jobs: [], staffRoles: [], channelId: `dm${id}` });
+const ctxOf = (e, id) => ({ ...e, me: { id, name: `u${id}` }, roles: MEMBERS[id] || [], permissions: '0', jobs: [], staffRoles: [], channelId: `dm${id}`, guildId: 'G' });
 const btn = (custom_id) => ({ type: 3, data: { custom_id } });
 const modalSubmit = (custom_id, fields) => ({ type: 5, data: { custom_id, components: Object.entries(fields).map(([k, v]) => ({ type: 1, components: [{ type: 4, custom_id: k, value: v }] })) } });
 
@@ -99,6 +99,11 @@ test('espejo: /arrestar y /multa del bot de antes salen en la web sin contestar 
   assert.match(await mirrorOldCommand(i, ctx), /arresto/);
   assert.equal(await mirrorOldCommand(i, ctx), null, 'la misma interacción no se guarda dos veces');
   assert.equal((await P.listArrests(db, '1001'))[0].cargos, 'Robo');
+  assert.ok(e.edits.some((x) => x.method === 'PUT' && x.route === '/guilds/G/members/1001/roles/1561567066484510821'), 'le da el rol de arrestado');
+  // antecedentes → rol de antecedentes
+  [i, ctx] = base('i1b', 'antecedentes', 'agregar', [{ name: 'usuario', type: 6, value: '1001' }, { name: 'delito', type: 3, value: 'Hurto' }]);
+  assert.match(await mirrorOldCommand(i, ctx), /antecedente/);
+  assert.ok(e.edits.some((x) => x.method === 'PUT' && x.route === '/guilds/G/members/1001/roles/1561567122721603656'), 'le da el rol de antecedentes');
   // multa: solo la ATT
   [i, ctx] = base('i2', 'multa', 'agregar', [{ name: 'usuario', type: 6, value: '1001' }, { name: 'monto', type: 4, value: 500 }, { name: 'articulos', type: 3, value: 'Art. 5' }]);
   assert.equal(await mirrorOldCommand(i, ctx), null, 'la Policía no pone multas');
