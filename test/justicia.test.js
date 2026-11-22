@@ -104,6 +104,18 @@ test('espejo: /arrestar y /multa del bot de antes salen en la web sin contestar 
   [i, ctx] = base('i1b', 'antecedentes', 'agregar', [{ name: 'usuario', type: 6, value: '1001' }, { name: 'delito', type: 3, value: 'Hurto' }]);
   assert.match(await mirrorOldCommand(i, ctx), /antecedente/);
   assert.ok(e.edits.some((x) => x.method === 'PUT' && x.route === '/guilds/G/members/1001/roles/1561567122721603656'), 'le da el rol de antecedentes');
+  // al cumplir el tiempo se le quita el rol (si no tiene otro arresto corriendo)
+  const { housekeeping } = await import('../lib/oldbot.js');
+  [i, ctx] = base('i1c', 'arrestar', 'usuario', [{ name: 'usuario', type: 6, value: '1001' }, { name: 'razon', type: 3, value: 'Evasión' }, { name: 'minutos', type: 4, value: 60 }]);
+  await mirrorOldCommand(i, ctx);
+  const del = () => e.edits.filter((x) => x.method === 'DELETE' && x.route === '/guilds/G/members/1001/roles/1561567066484510821').length;
+  await housekeeping({ db, api: e.api, guildId: 'G', now: () => NOW + 31 * 60_000 });
+  assert.equal(del(), 0, 'el de 30 min terminó pero queda el de 60: el rol se queda');
+  await housekeeping({ db, api: e.api, guildId: 'G', now: () => NOW + 61 * 60_000 });
+  assert.equal(del(), 1, 'terminó el último: se quita el rol');
+  [i, ctx] = base('i1d', 'arrestar', 'liberar', [{ name: 'usuario', type: 6, value: '1001' }]);
+  await mirrorOldCommand(i, ctx);
+  assert.equal(del(), 2, 'al liberar también se quita');
   // multa: solo la ATT
   [i, ctx] = base('i2', 'multa', 'agregar', [{ name: 'usuario', type: 6, value: '1001' }, { name: 'monto', type: 4, value: 500 }, { name: 'articulos', type: 3, value: 'Art. 5' }]);
   assert.equal(await mirrorOldCommand(i, ctx), null, 'la Policía no pone multas');
