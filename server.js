@@ -23,7 +23,8 @@ import { buildCommands, COMMAND_LIST, COMMAND_NAMES, handleCommand, sameCommands
 import { startGateway } from './lib/gateway.js';
 import * as market from './lib/market.js';
 import { runOld, runComponent, housekeeping, getCfg as botCfg } from './lib/oldbot.js';
-import { JUSTICE_RE, justiceModal, runJustice } from './lib/justicia.js';
+import { JUSTICE_RE, justiceModal, runJustice, submitCase, listMyCases, DENUNCIAS } from './lib/justicia.js';
+import { mirrorOldCommand } from './lib/mirror.js';
 import { createErlc } from './lib/erlc.js';
 import { fetchRobloxProfile, hasCode, LINK_TTL, makeCode } from './lib/robloxlink.js';
 
@@ -89,7 +90,7 @@ const ipOf = (req) => {
   return ip;
 };
 app.use(securityHeaders({ https: HTTPS }));
-const PANEL_POSTS = ['/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/policia/multa', '/policia/arresto', '/tienda/comprar'];
+const PANEL_POSTS = ['/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/policia/multa', '/policia/arresto', '/tienda/comprar', '/justicia/denuncia', '/justicia/juicio'];
 app.use(methodGuard(['/logout', '/api/solicitud', '/api/discord/interactions', '/api/roblox/vincular', '/api/roblox/comprobar', ...PANEL_POSTS.map((p) => `/api/panel${p}`)]));
 app.use(rateLimit({ windowMs: 60_000, max: 300, keyFn: ipOf }));
 
@@ -623,9 +624,10 @@ async function applyDecision(effect, interaction) {
 // Contexto para los comandos del bot (los de antes y los de la web)
 async function botContext(interaction, store) {
   const guildId = interaction.guild_id || HOME_GUILD;
-  const roles = Array.isArray(interaction.member?.roles) ? interaction.member.roles : [];
-  const guildRoles = bot ? await bot.guildRoles(guildId) : [];
   const u = interaction.member?.user || interaction.user || {};
+  // En un DM no vienen los roles: se buscan en el servidor
+  const roles = Array.isArray(interaction.member?.roles) ? interaction.member.roles : ((await memberInfo(u.id).catch(() => null))?.roles || []);
+  const guildRoles = bot ? await bot.guildRoles(guildId) : [];
   return {
     db: store,
     api: (method, route, body, opts) => bot.call(method, route, body, opts),
@@ -645,7 +647,30 @@ async function botContext(interaction, store) {
     robloxAvatar: async (name) => (name ? (await lookupRoblox(name).catch(() => null))?.avatar || null : null),
     erlc,
     setErlcKey,
+    membersWithRoles,
   };
+}
+
+// Personas del servidor que tienen alguno de esos roles (para mandarles el caso por DM)
+let membersCache = { at: 0, list: [] };
+async function membersWithRoles(roleIds) {
+  if (!bot || !roleIds?.length) return [];
+  if (Date.now() - membersCache.at > 60_000) {
+    const all = [];
+    let after = '0';
+    for (let i = 0; i < 20; i++) {
+      const r = await bot.call('GET', `/guilds/${HOME_GUILD}/members?limit=1000&after=${after}`);
+      if (!r.ok || !Array.isArray(r.data)) {
+        console.error(`[justicia] no pude leer los miembros (error ${r.status}${r.status === 403 ? ': activa "Server Members Intent" en el Developer Portal → Bot' : ''})`);
+        break;
+      }
+      all.push(...r.data);
+      if (r.data.length < 1000) break;
+      after = r.data[r.data.length - 1].user.id;
+    }
+    if (all.length) membersCache = { at: Date.now(), list: all.map((m) => ({ id: m.user?.id, bot: Boolean(m.user?.bot), roles: m.roles || [] })) };
+  }
+  return membersCache.list.filter((m) => !m.bot && m.roles.some((r) => roleIds.includes(r))).map((m) => m.id);
 }
 
 // Comandos de barra y botones: la respuesta "pensando…" ya se mandó; aquí se hace el trabajo y se entrega
@@ -724,6 +749,21 @@ let OUR_COMMAND_IDS = new Set();
 let gatewayOnce = false;
 
 
+// Comandos de antes: la web guarda lo que se hizo (arrestos, multas, DNI…) para que salga en el panel.
+function mirrorLater(interaction) {
+  setTimeout(async () => {
+    try {
+      const store = await getDb();
+      if (!store || !bot) return;
+      const ctx = await botContext(interaction, store);
+      const done = await mirrorOldCommand(interaction, ctx);
+      if (done) console.log(`[espejo] /${interaction.data?.name}: ${done}`);
+    } catch (err) {
+      console.error('[espejo]', interaction.data?.name, err.message);
+    }
+  }, 2500);
+}
+
 // Respuesta a una interacción (igual por la URL o por el gateway). 'after' sigue trabajando después de responder.
 const thinking = { type: 5, data: { flags: 64 } }; // "El bot está pensando…" (privado)
 async function answerInteraction(interaction) {
@@ -733,7 +773,11 @@ async function answerInteraction(interaction) {
 
   // Los comandos de antes (y todo lo que no es de la web) los contesta el bot de antes, sin tocarlos
   if (interaction.type === 4) return null;
-  if (interaction.type === 2) return COMMAND_NAMES.includes(name) ? later('web') : null;
+  if (interaction.type === 2 && !COMMAND_NAMES.includes(name)) {
+    mirrorLater(interaction); // solo lee lo que se puso y lo guarda en la web; no contesta nada
+    return null;
+  }
+  if (interaction.type === 2) return later('web');
   if ((interaction.type === 3 || interaction.type === 5) && JUSTICE_RE.test(cid)) {
     const modal = justiceModal(interaction);
     return modal ? { response: { type: 9, data: modal } } : later('justice');
@@ -940,6 +984,26 @@ app.get('/api/panel/policia/ficha', panelLimit, panelRoute(async ({ user, db: d,
   return { ...rec, avatar };
 }));
 
+// Denuncias y juicios (les llegan por DM a los jueces)
+const justiceEnv = (d) => ({
+  db: d, now: () => Date.now(), membersWithRoles,
+  dm: (userId, payload) => (bot ? bot.dm(userId, payload) : Promise.resolve({ ok: false })),
+  api: (m, r, b, o) => (bot ? bot.call(m, r, b, o) : Promise.resolve({ ok: false })),
+});
+app.get('/api/panel/justicia', panelLimit, panelRoute(async ({ user, db: d, jobs }) => ({
+  cases: await listMyCases(d, user.id), tipos: DENUNCIAS.map(([k, n, e]) => ({ k, n, e })), policia: jobs.includes('policia'),
+})));
+post('/justicia/denuncia', async ({ user, db: d }, req) => {
+  if (!bot) throw new panel.PanelError(503, 'El bot no está conectado.');
+  return submitCase(justiceEnv(d), user, { ...(req.body || {}), origen: 'denuncia' });
+});
+post('/justicia/juicio', async ({ user, db: d, jobs }, req) => {
+  if (!jobs.includes('policia')) throw new panel.PanelError(403, 'Solo la Policía (Policía Nacional, Aeronaval o Senafront) puede mandar juicios.');
+  if (!bot) throw new panel.PanelError(503, 'El bot no está conectado.');
+  const me = await panel.getCharacter(d, user.id);
+  return submitCase(justiceEnv(d), user, { ...(req.body || {}), origen: 'juicio', denunciante: me ? `${me.nombre} ${me.apellidos}` : user.name });
+});
+
 // Concesionario e inmobiliaria
 app.get('/api/panel/tienda', panelLimit, panelRoute(async ({ user, db: d }) => ({
   catalog: await market.listCatalog(d), mine: await market.myAssets(d, user.id), colors: market.COLORS,
@@ -1036,6 +1100,13 @@ app.listen(PORT, () => {
         if (t === 'READY' && !gatewayOnce) {
           gatewayOnce = true;
           releaseInteractionsUrl().catch((err) => console.error('[gateway]', err.message));
+          // ¿A cuántos jueces y abogados/fiscales les llegarían los casos por DM?
+          setTimeout(async () => {
+            const store = await getDb();
+            if (!store) return;
+            const [j, a] = await Promise.all([membersWithRoles(await botCfg(store, 'roles', 'jueces')), membersWithRoles(await botCfg(store, 'roles', 'abogados'))]);
+            console.log(`Justicia (DM): ${j.length} juez(es), ${a.length} abogado(s)/fiscal(es)`);
+          }, 8000);
         }
         if (t === 'INTERACTION_CREATE') onGatewayInteraction(d).catch((err) => console.error('[gateway]', err.message));
       },

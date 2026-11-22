@@ -21,6 +21,7 @@
     car: '<path d="M5 16V11l2-5h10l2 5v5"/><path d="M3 16h18v3H3z"/><circle cx="7.5" cy="13.5" r="1"/><circle cx="16.5" cy="13.5" r="1"/>',
     home: '<path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
     store: '<path d="M4 9h16l-1-5H5z"/><path d="M5 9v11h14V9"/><path d="M9 20v-5h6v5"/>',
+    scale: '<path d="M12 4v16M6 20h12M5 7h14"/><path d="M5 7 2.5 13a2.5 2.5 0 0 0 5 0L5 7ZM19 7l-2.5 6a2.5 2.5 0 0 0 5 0L19 7Z"/>',
     db: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>',
     book: '<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/>',
     shield: '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
@@ -47,7 +48,7 @@
   const head = $('#pn-head');
   const main = $('#pn-main');
   let S = null;
-  const ui = { tab: 'info', work: 'historial', search: null, activity: null, busy: false, flip: false, link: null, shop: null, shopTab: 'vehiculo' };
+  const ui = { tab: 'info', work: 'historial', search: null, activity: null, busy: false, flip: false, link: null, shop: null, shopTab: 'vehiculo', just: null, denTipo: null };
 
   // ─── Utilidades ───
   let toastT = 0;
@@ -90,9 +91,10 @@
   const TITLES = {
     inicio: () => ['Panel <em>ciudadano</em>', 'Panel central de herramientas y accesos del servidor'],
     perfil: () => ['Mi perfil', 'Identidad IC, cuenta y expediente'],
-    trabajos: () => [`Panel de turnos <em>${esc(handle())}</em>`, 'Inicia tu turno al entrar al servidor y cobra al terminar'],
+    trabajos: () => [`Panel de turnos <em>${esc(handle())}</em>`, 'Inicia tu turno al entrar al servidor y termínalo al salir'],
     banco: () => [`Banco, <em>${esc(handle())}</em>`, 'Depósitos, retiros, transferencias y movimientos'],
     tienda: () => ['Concesionario e <em>inmobiliaria</em>', 'Compra carros y casas con el dinero de tu banco'],
+    justicia: () => ['Denuncias y <em>juicios</em>', 'Lo que mandes les llega por mensaje privado a los jueces'],
   };
   function renderHead(view) {
     const [title, sub] = TITLES[view]();
@@ -131,15 +133,16 @@
   }
 
   // ─── Pantallas (#inicio, #perfil, #trabajos, #banco) ───
-  const VIEWS = ['inicio', 'perfil', 'trabajos', 'banco', 'tienda'];
+  const VIEWS = ['inicio', 'perfil', 'trabajos', 'banco', 'tienda', 'justicia'];
   const currentView = () => { const h = location.hash.slice(1); return VIEWS.includes(h) ? h : 'inicio'; };
 
   function render() {
     const view = currentView();
     renderHead(view);
     const banner = S.modo === 'prueba' ? `<div class="pn-note warn">${ico('alert')}<div>Modo de prueba: falta la base de datos y lo que hagas aquí se borra al reiniciar la web.</div></div>` : '';
-    main.innerHTML = banner + ({ perfil: viewPerfil, trabajos: viewTrabajos, banco: viewBanco, tienda: viewTienda }[view] || viewInicio)();
+    main.innerHTML = banner + ({ perfil: viewPerfil, trabajos: viewTrabajos, banco: viewBanco, tienda: viewTienda, justicia: viewJusticia }[view] || viewInicio)();
     if (view === 'tienda' && !ui.shop) loadShop();
+    if (view === 'justicia' && !ui.just) loadJusticia();
     $$('[data-color]').forEach((el) => el.style.setProperty('--job', el.dataset.color));
     tick();
     if (view === 'trabajos' && ['policia', 'transito'].includes(S.shift?.job) && !ui.activity) loadActivity();
@@ -168,6 +171,7 @@
         ${cat('#trabajos', 'blue', 'power', 'Servicio Trabajos', 'Prende turno y gana dinero IC')}
         ${cat('#banco', 'gold', 'bank', 'Banco', 'Depósitos, retiros y transferencias')}
         ${cat('#tienda', 'purple', 'store', 'Carros y casas', 'Concesionario e inmobiliaria')}
+        ${cat('#justicia', 'cyan', 'scale', 'Justicia', 'Denuncias y juicios')}
         ${cat('/#normativa', 'red', 'book', 'Normativa', 'Reglas del servidor')}
       </div>`;
   }
@@ -409,9 +413,9 @@
     if (!S.character) {
       controls = `<a class="pn-btn gold" href="#perfil">Crea tu cédula para trabajar</a>`;
     } else if (on) {
-      controls = `<button class="pn-btn red lg" type="button" data-act="terminar">${ico('power')}Terminar turno y cobrar</button>`;
+      controls = `<button class="pn-btn red lg" type="button" data-act="terminar">${ico('power')}Terminar turno</button>`;
     } else if (S.jobs.length) {
-      controls = `<div class="pn-pick"><div class="ap-select"><select class="ap-input" id="pn-job" aria-label="Trabajo">${S.jobs.map((k) => `<option value="${esc(k)}">${jobInfo(k).icon} ${esc(jobInfo(k).name)} · ${money(jobInfo(k).payPerHour)}/h</option>`).join('')}</select></div>
+      controls = `<div class="pn-pick"><div class="ap-select"><select class="ap-input" id="pn-job" aria-label="Trabajo">${S.jobs.map((k) => `<option value="${esc(k)}">${jobInfo(k).icon} ${esc(jobInfo(k).name)}</option>`).join('')}</select></div>
         <button class="pn-btn gold lg" type="button" data-act="iniciar">${ico('power')}Iniciar turno</button></div>`;
     } else {
       controls = `<div class="pn-dropbox">${ico('briefcase')}<div><b>Trabajos disponibles</b><small>Necesitas el rol del trabajo en Discord (Policía, EMS, Bomberos…)</small></div></div>`;
@@ -421,12 +425,12 @@
         <div class="pn-work-main">
           <span class="pn-state ${on ? 'on' : ''}"><i></i>${on ? `En servicio · ${esc(j.name)}` : 'Fuera de servicio'}</span>
           <h2>Panel de <em>trabajo</em></h2>
-          <p>Elige tu trabajo y toca <b>Iniciar turno</b> cuando entres al servidor de ER:LC. Al salir, toca <b>Terminar turno</b> y el pago se acredita a tu banco. Necesitas el rol del trabajo en Discord. Mínimo ${r.minMinutes} min · máximo ${r.maxMinutes / 60} h por turno.</p>
+          <p>Elige tu trabajo y toca <b>Iniciar turno</b> cuando entres al servidor de ER:LC. Al salir, toca <b>Terminar turno</b> y tu tiempo queda registrado. Necesitas el rol del trabajo en Discord.</p>
           ${controls}
         </div>
         <div class="pn-work-side">
           <div class="pn-stat"><span class="pn-stat-ico">${ico('clock')}</span><b ${on ? 'data-hm' : ''}>0h 0m</b><small>${on ? 'Turno activo <span data-sec></span>' : 'Sin turno activo'}</small></div>
-          <div class="pn-stat"><span class="pn-stat-ico gold">${ico('cash')}</span><b ${on ? 'data-earn' : ''}>${on ? '$0' : '—'}</b><small>Ganancia estimada</small></div>
+          <div class="pn-stat"><span class="pn-stat-ico gold">${ico('history')}</span><b data-week>${hm(S.stats.minutos)}</b><small>Esta semana</small></div>
         </div>
       </section>
       <div class="pn-bigtabs">
@@ -442,7 +446,7 @@
       const j = jobInfo(s.job);
       return `<li><span class="pn-li-ico job" data-color="${esc(j.color)}">${j.icon}</span>
         <div><b>${esc(j.name)}</b><small>${fecha(s.started_at)} · ${hora(s.started_at)} – ${hora(s.ended_at)}</small></div>
-        <div class="pn-li-r"><span class="pn-tag">${hm(s.minutes)}</span><b class="${s.paid ? 'pos' : ''}">${s.paid ? `+${money(s.paid)}` : 'Sin pago'}</b></div></li>`;
+        <div class="pn-li-r"><span class="pn-tag">${hm(s.minutes)}</span></div></li>`;
     }).join('')}</ul>` : '<div class="pn-empty soft"><b>Sin resultados</b><p>No hay servicios registrados</p></div>';
     return `<section class="pn-box"><h3 class="pn-h3">Historial de servicios</h3><p class="pn-muted">Tus últimos turnos terminados</p>${list}</section>`;
   }
@@ -569,6 +573,53 @@
     }).join('')}</div>`;
   }
 
+  // ─── Justicia: denuncias (todos) y juicios (Policía) ───
+  async function loadJusticia() {
+    try { ui.just = await api('/api/panel/justicia'); } catch (e) { ui.just = { error: e.error }; }
+    if (currentView() === 'justicia') render();
+  }
+  const ESTADO = { pendiente: ['gold', 'Esperando juez'], aceptado: ['blue', 'Aceptado · buscando fiscal y abogado'], rechazado: ['bad', 'Rechazado'], listo: ['ok', 'Listo para juicio'] };
+  function viewJusticia() {
+    const J = ui.just;
+    if (!J) return '<div class="pn-loading"><span class="pn-spin" aria-hidden="true"></span>Cargando…</div>';
+    if (J.error) return `<div class="pn-note warn">${ico('alert')}<div>${esc(J.error)}</div></div>`;
+    const myName = S.character ? `${S.character.nombre} ${S.character.apellidos}` : '';
+    const t = J.tipos.find((x) => x.k === ui.denTipo);
+    const denForm = !t ? '' : `<form data-form="denuncia" class="pn-form-box" novalidate>
+        <h4>${t.e} Denuncia: ${esc(t.k === 'otra' ? 'Otra' : t.n)}</h4>
+        <input type="hidden" name="tipo" value="${esc(t.k)}">
+        ${t.k === 'otra' ? field('d-otro', 'Qué quieres denunciar', '<input class="ap-input" id="f-d-otro" name="otro" maxlength="80" required>') : ''}
+        ${field('d-acusado', 'Nombre del denunciado', '<input class="ap-input" id="f-d-acusado" name="acusado" maxlength="80" placeholder="Nombre del personaje o «Desconocido»" required>')}
+        ${field('d-denunciante', 'Tu nombre (quien denuncia)', `<input class="ap-input" id="f-d-denunciante" name="denunciante" maxlength="80" value="${esc(myName)}" required>`)}
+        ${field('d-hechos', 'Qué pasó', '<textarea class="ap-input" id="f-d-hechos" name="hechos" maxlength="1500" rows="4" required></textarea>')}
+        ${field('d-lugar', 'Lugar, fecha y hora', '<input class="ap-input" id="f-d-lugar" name="lugar" maxlength="150" placeholder="Ej: Vía España, hoy 9 pm">')}
+        ${field('d-pruebas', 'Pruebas (enlaces o testigos)', '<textarea class="ap-input" id="f-d-pruebas" name="pruebas" maxlength="800" rows="2"></textarea>')}
+        <div class="pn-row"><button class="pn-btn gold" type="submit">Enviar a los jueces</button><button class="pn-btn ghost" type="button" data-act="den-tipo" data-tipo="">Cancelar</button></div>
+      </form>`;
+    const denuncia = `<section class="pn-box"><div class="pn-box-h"><span class="pn-box-ico">${ico('receipt')}</span><div><b>Poner una denuncia</b><small>Elige qué quieres denunciar</small></div></div>
+        <div class="pn-den">${J.tipos.map((x) => `<button type="button" class="pn-den-b ${ui.denTipo === x.k ? 'on' : ''}" data-act="den-tipo" data-tipo="${esc(x.k)}"><span>${x.e}</span>${esc(x.n)}</button>`).join('')}</div>
+        ${denForm}</section>`;
+    const juicio = !J.policia ? '' : `<section class="pn-box"><div class="pn-box-h"><span class="pn-box-ico blue">${ico('gavel')}</span><div><b>Enviar un juicio (Policía)</b><small>Le llega por DM a los jueces</small></div></div>
+        <form data-form="juicio" novalidate>
+          <div class="pn-two">
+            ${field('j-acusado', 'Nombre del acusado', '<input class="ap-input" id="f-j-acusado" name="acusado" maxlength="80" required>')}
+            ${field('j-cedula', 'Cédula del acusado (si la sabes)', '<input class="ap-input" id="f-j-cedula" name="cedula" maxlength="20" placeholder="8-123-4567" autocomplete="off">')}
+            ${field('j-edad', 'Edad', '<input class="ap-input" id="f-j-edad" name="edad" inputmode="numeric" maxlength="3" placeholder="Ej: 25" required>')}
+            ${field('j-acusacion', 'De qué se le acusa', '<input class="ap-input" id="f-j-acusacion" name="acusacion" maxlength="200" placeholder="Ej: Robo a mano armada" required>')}
+          </div>
+          ${field('j-hechos', 'Hechos (qué pasó, lugar y hora)', '<textarea class="ap-input" id="f-j-hechos" name="hechos" maxlength="1500" rows="4" required></textarea>')}
+          ${field('j-pruebas', 'Pruebas (enlaces, testigos, cámaras…)', '<textarea class="ap-input" id="f-j-pruebas" name="pruebas" maxlength="800" rows="2"></textarea>')}
+          <button class="pn-btn gold" type="submit">Enviar a los jueces</button>
+        </form></section>`;
+    const mine = J.cases.length ? `<ul class="pn-list">${J.cases.map((c) => {
+      const [cls, txt] = ESTADO[c.estado] || ['', c.estado];
+      return `<li><span class="pn-li-ico ${c.origen === 'juicio' ? 'blue' : 'gold'}">${ico(c.origen === 'juicio' ? 'gavel' : 'receipt')}</span>
+        <div><b>#${c.id} · ${c.origen === 'juicio' ? 'Juicio' : 'Denuncia'} · ${esc(c.tipo)}</b><small>Contra ${esc(c.acusado)} · ${fechaHora(c.created_at)}${c.motivo ? ` · Motivo: ${esc(c.motivo)}` : ''}</small></div>
+        <div class="pn-li-r"><span class="pn-tag ${cls}">${txt}</span></div></li>`;
+    }).join('')}</ul>` : empty('scale', 'Todavía no has mandado denuncias ni juicios');
+    return `${denuncia}${juicio}<section class="pn-box"><h3 class="pn-h3">Mis casos</h3>${mine}</section>`;
+  }
+
   // ─── Ficha de la base de datos (Policía / ATT) ───
   async function openFicha(cedula) {
     const r = await api(`/api/panel/policia/ficha?cedula=${encodeURIComponent(cedula)}`);
@@ -627,8 +678,6 @@
     $$('[data-hm]').forEach((el) => { el.textContent = hm(min); });
     $$('[data-sec]').forEach((el) => { el.textContent = `· ${String(secs % 60).padStart(2, '0')}s`; });
     $$('[data-week]').forEach((el) => { el.textContent = hm(S.stats.minutos + min); });
-    const pay = min >= S.shiftRules.minMinutes ? Math.round((Math.min(min, S.shiftRules.maxMinutes) / 60) * jobInfo(S.shift.job).payPerHour) : 0;
-    $$('[data-earn]').forEach((el) => { el.textContent = money(pay); });
   }
   setInterval(tick, 1000);
 
@@ -692,6 +741,11 @@
         closeModal();
         toast(`Enviaste ${money(f.monto)} a ${r.to}`);
         await refresh();
+      } else if (kind === 'denuncia' || kind === 'juicio') {
+        const r = await api(`/api/panel/justicia/${kind}`, f);
+        toast(`${kind === 'juicio' ? `Juicio #${r.id} enviado` : `Denuncia #${r.id} enviada`} a ${r.jueces} juez(es) por mensaje privado.`);
+        ui.just = null; ui.denTipo = null;
+        render();
       } else if (kind === 'comprar') {
         const r = await api('/api/panel/tienda/comprar', { id: Number(f.id), color: f.color });
         toast(r.bought.tipo === 'vehiculo' ? `¡Compraste ${r.bought.nombre}! Placa ${r.bought.placa}` : `¡Compraste ${r.bought.nombre}! ${r.bought.direccion}`);
@@ -726,6 +780,7 @@
     if (act === 'tab') { ui.tab = b.dataset.tab; render(); if (b.classList.contains('pn-short')) $('#pn-exp')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     if (act === 'work') { ui.work = b.dataset.tab; render(); return; }
     if (act === 'tienda-tab') { ui.shopTab = b.dataset.tab; render(); return; }
+    if (act === 'den-tipo') { ui.denTipo = b.dataset.tipo || null; render(); if (ui.denTipo) setTimeout(() => $('form[data-form="denuncia"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); return; }
     if (act === 'tienda-recargar') { ui.shop = null; render(); return; }
     if (act === 'copiar') { navigator.clipboard?.writeText(ui.link?.code || '').then(() => toast('Código copiado'), () => toast('Mantén presionado el código para copiarlo')); return; }
     if (act === 'otro-usuario') { ui.link = null; render(); return; }
@@ -748,7 +803,7 @@
         await refresh();
       } else if (act === 'terminar') {
         const r = (await api('/api/panel/turno/terminar', {})).result;
-        toast(r.tooShort ? `Turno de ${r.minutes} min: muy corto para cobrar.` : `Turno de ${hm(r.minutes)} · cobraste ${money(r.paid)}${r.capped ? ' (tope de 4 h)' : ''}`);
+        toast(`Turno de ${hm(r.minutes)} terminado y registrado.`);
         await refresh();
       } else if (act === 'comprobar') {
         const r = await api('/api/roblox/comprobar', {});

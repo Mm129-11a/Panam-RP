@@ -77,7 +77,7 @@ test('transferencias por cédula', async () => {
   assert.equal(t[0].note, 'Renta del local');
 });
 
-test('turnos: uno a la vez, solo con el rol, y paga al terminar', async () => {
+test('turnos: uno a la vez, solo con el rol, y solo registran el tiempo (el pago lo hace el bot)', async () => {
   const db = await fresh();
   await citizen(db, POLI);
   await rejects(() => P.startShift(db, POLI.id, 'policia', { jobs: JOBS, allowed: [], now: NOW }), 403, /rol/);
@@ -86,18 +86,14 @@ test('turnos: uno a la vez, solo con el rol, y paga al terminar', async () => {
   assert.equal(s.job, 'policia');
   await rejects(() => P.startShift(db, POLI.id, 'policia', { jobs: JOBS, allowed: ['policia'], now: NOW + 1 }), 409, /abierto/);
   const end = await P.endShift(db, POLI.id, { jobs: JOBS, now: NOW + 90 * 60_000 });
-  assert.deepEqual(end, { job: 'policia', minutes: 90, paid: 1800, capped: false, tooShort: false });
-  assert.equal((await P.getAccount(db, POLI.id)).banco, P.MONEY.startBanco + 1800);
+  assert.deepEqual(end, { job: 'policia', name: 'Policía', minutes: 90, paid: 0 });
+  assert.equal((await P.getAccount(db, POLI.id)).banco, P.MONEY.startBanco, 'no paga nada');
   await rejects(() => P.endShift(db, POLI.id, { jobs: JOBS, now: NOW }), 409);
-
   await P.startShift(db, POLI.id, 'policia', { jobs: JOBS, allowed: ['policia'], now: NOW });
-  assert.equal((await P.endShift(db, POLI.id, { jobs: JOBS, now: NOW + 2 * 60_000 })).paid, 0, 'menos de 5 min no paga');
-  await P.startShift(db, POLI.id, 'policia', { jobs: JOBS, allowed: ['policia'], now: NOW });
-  const long = await P.endShift(db, POLI.id, { jobs: JOBS, now: NOW + 10 * 3600_000 });
-  assert.equal(long.paid, 4800, 'tope de 4 horas');
-  assert.equal(long.capped, true);
-  assert.deepEqual(await P.shiftStats(db, POLI.id, NOW - 1), { turnos: 3, minutos: 692, pagado: 6600 });
+  await P.endShift(db, POLI.id, { jobs: JOBS, now: NOW + 10 * 3600_000 });
+  assert.deepEqual(await P.shiftStats(db, POLI.id, NOW - 1), { turnos: 2, minutos: 690, pagado: 0 });
 });
+
 
 test('policía: buscar, multar y arrestar solo en turno', async () => {
   const db = await fresh();

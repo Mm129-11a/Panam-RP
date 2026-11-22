@@ -1,7 +1,7 @@
 // Panamá RP — lógica de la página
 /* ═══════════ CONFIGURACIÓN — cambia aquí tus datos ═══════════ */
 const CONFIG = {
-  serverCode: 'PANAMARP', // ← pon aquí el código real de tu servidor
+  serverCode: 'FEFjj', // código del servidor privado de ER:LC
   online: 22, members: 61, // respaldo si no carga el dato en vivo
   links: { discord: 'https://discord.gg/fgRGQPbJF3', youtube: '', tiktok: '', instagram: '', roblox: '' },
   // Para poner fotos: sube la imagen a /public/img/galeria/ y escribe la ruta en img, por ejemplo img: '/img/galeria/ems.webp'

@@ -118,7 +118,7 @@ test('turno desde Discord y comprobación de ER:LC', async () => {
   const r = await start({ verifyInGame: async () => {} });
   assert.match(r.public.content, /entró en servicio como \*\*Policía/);
   assert.match((await handleCommand(cmd(POLI, 'turno', [{ type: 1, name: 'estado' }]), ctx(db))).private.content, /Llevas/);
-  assert.match((await handleCommand(cmd(POLI, 'turno', [{ type: 1, name: 'terminar' }]), ctx(db))).private.content, /muy corto|cobraste/i);
+  assert.match((await handleCommand(cmd(POLI, 'turno', [{ type: 1, name: 'terminar' }]), ctx(db))).private.content, /terminado y registrado/);
 });
 
 test('API de ER:LC: jugadores, estado y caché', async () => {

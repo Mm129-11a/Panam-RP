@@ -416,3 +416,6 @@ textarea.ap-input{min-height:112px;resize:vertical;line-height:1.5}
 .userchip.compact span{display:none}
 @media (max-width:600px){.userchip.compact{display:none}}
 @media (max-width:1240px){.ciudadano .live{display:none}}
+/* Código del servidor en la portada */
+.hero-code{margin:18px 0 0;background:rgba(10,14,24,.55);font-size:17px}
+.hero-code b{font-size:20px;color:#fff}
