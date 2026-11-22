@@ -277,11 +277,8 @@
     <p>${already ? 'El staff la está revisando. Te avisarán por Discord.' : 'El staff la revisará y te avisará por Discord. Mientras tanto, repasa la normativa.'}</p>
     <a class="btn lg" href="/">Volver al inicio</a>`);
 
-  const viewAccepted = () => screen(`<div class="big-ico ok">✓</div>
-    <h2 class="ap-h">¡Tu whitelist fue aceptada!</h2>
-    <p>Ya eres ciudadano de Panamá RP. En el panel tienes tu cédula, tu banco y tus trabajos.</p>
-    <a class="btn lg" href="/panel">Entrar al panel</a>
-    <a class="btn lg ghost" href="/#normativa">Ver normativa</a>`);
+  // Whitelist aceptada: directo al panel, sin preguntar
+  const goPanel = () => { clearDraft(); location.replace('/panel'); };
 
   function banner(kind, html) {
     $('#ap-banner').innerHTML = `<div class="ap-banner ${kind}">${html}</div>`;
@@ -400,7 +397,7 @@
       });
       const j = await r.json().catch(() => ({}));
       if (r.ok && j.ok) { clearDraft(); S.d = emptyDraft(); viewDone(false); return; }
-      if (r.status === 409) { clearDraft(); return j.aceptada ? viewAccepted() : viewDone(true); }
+      if (r.status === 409) { clearDraft(); return j.aceptada ? goPanel() : viewDone(true); }
       if (r.status === 401) { toast('Tu sesión expiró. Inicia sesión otra vez.'); setTimeout(() => { location.href = '/auth/discord?next=/solicitud'; }, 1200); return; }
       if (r.status === 400 && j.errors) {
         const first = Object.keys(j.errors)[0];
@@ -439,7 +436,7 @@
     else if (login === 'ok' && S.me.user) toast(`¡Hola, ${S.me.user.name}!`);
 
     if (S.loginEnabled && !S.me.user) return viewGate();
-    if (S.me.user && S.me.whitelist === 'aceptada') return viewAccepted();
+    if (S.me.user && S.me.whitelist === 'aceptada') return goPanel();
     if (S.me.user && S.me.submitted) return viewDone(true);
     if (!S.loginEnabled) banner('info', '<b>Vista previa.</b> El inicio de sesión con Discord aún no está activado, así que puedes ver el formulario pero no enviarlo.');
     else if (!S.receiving) banner('warn', 'El staff aún no activó la recepción de solicitudes. Puedes llenarla, pero no enviarla todavía.');

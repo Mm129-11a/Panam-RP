@@ -831,6 +831,18 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'no_encontrado' }));
 
 app.get('/healthz', (req, res) => res.type('text').send('ok'));
 
+// Con la whitelist ya aceptada, la página de solicitud manda directo al panel
+async function acceptedToPanel(req, res, next) {
+  const user = req.session?.user;
+  if (!user) return next();
+  const status = await whitelistStatus(user.id).catch(() => null);
+  if (status !== 'aceptada') return next();
+  res.setHeader('Cache-Control', 'no-store');
+  res.redirect(302, '/panel');
+}
+app.get('/solicitud', acceptedToPanel);
+app.get('/solicitud.html', acceptedToPanel);
+
 // ─── Archivos de la página ───
 app.use(express.static(path.join(__dirname, 'public'), {
   extensions: ['html'],

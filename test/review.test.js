@@ -123,6 +123,9 @@ test('botones y mensajes privados', () => {
   assert.deepEqual(row.components.map((b) => b.custom_id), [`wl:ok:${APPLICANT}`, `wl:no:${APPLICANT}`]);
   assert.ok(row.components.every((b) => b.custom_id.length <= 100));
   assert.match(decisionDm({ kind: 'accept' }).embeds[0].title, /aceptada/);
+  const si = decisionDm({ kind: 'accept', siteUrl: 'https://panama-rp.onrender.com' });
+  assert.equal(si.components[0].components[0].url, 'https://panama-rp.onrender.com/panel');
+  assert.equal(si.components[0].components[0].style, 5);
   const no = decisionDm({ kind: 'reject', motivo: 'x'.repeat(900), siteUrl: 'https://panama-rp.onrender.com' });
   assert.match(no.embeds[0].description, /onrender\.com\/solicitud/);
   assert.ok(no.embeds[0].description.length < 600);
