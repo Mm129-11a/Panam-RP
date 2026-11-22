@@ -86,7 +86,7 @@ test('turnos: uno a la vez, solo con el rol, y solo registran el tiempo (el pago
   assert.equal(s.job, 'policia');
   await rejects(() => P.startShift(db, POLI.id, 'policia', { jobs: JOBS, allowed: ['policia'], now: NOW + 1 }), 409, /abierto/);
   const end = await P.endShift(db, POLI.id, { jobs: JOBS, now: NOW + 90 * 60_000 });
-  assert.deepEqual(end, { job: 'policia', name: 'Policía', minutes: 90, paid: 0 });
+  assert.deepEqual(end, { job: 'policia', name: 'Policía Nacional', minutes: 90, paid: 0 });
   assert.equal((await P.getAccount(db, POLI.id)).banco, P.MONEY.startBanco, 'no paga nada');
   await rejects(() => P.endShift(db, POLI.id, { jobs: JOBS, now: NOW }), 409);
   await P.startShift(db, POLI.id, 'policia', { jobs: JOBS, allowed: ['policia'], now: NOW });
@@ -159,15 +159,17 @@ test('las solicitudes se guardan y sirven para llenar la cédula', async () => {
   assert.equal(await P.latestApplication(db, BETO.id), null);
 });
 
-test('trabajos según los roles de Discord', () => {
-  const roles = [{ id: '1', name: '🚓 | Policía Nacional' }, { id: '2', name: 'Paramédicos' }, { id: '3', name: 'Taller Mecánico' }, { id: '4', name: 'Staff' }];
-  assert.deepEqual(jobsFor(['1', '4'], roles), ['policia']);
-  assert.deepEqual(jobsFor(['2', '3'], roles), ['ems', 'mecanico']);
+test('trabajos según los roles de Discord (uno por rol, por ID)', () => {
+  const ID = { pn: '1560736880872525836', aero: '1560736880872525835', sena: '1565913556535353444', att: '1560736880478130184', bomb: '1560736880872525834' };
+  const roles = [{ id: ID.pn, name: 'Policía Nacional' }, { id: ID.aero, name: 'Aeronaval' }, { id: '4', name: 'Staff' }, { id: '5', name: 'Oficial de prensa' }, { id: '6', name: 'Paramédicos' }];
+  assert.deepEqual(jobsFor([ID.aero], roles), ['aeronaval'], 'solo el rol que tiene');
+  assert.deepEqual(jobsFor([ID.pn, ID.sena, ID.att, ID.bomb], roles), ['policia', 'senafront', 'transito', 'bomberos']);
+  assert.deepEqual(jobsFor(['4', '5', '6'], roles), [], 'sin rol de trabajo no hay trabajos (no se adivina por el nombre)');
   assert.deepEqual(jobsFor([], roles), []);
-  const custom = configureJobs('policia=Staff;nada=algo;ems=');
-  assert.deepEqual(jobsFor(['4'], roles, custom), ['policia']);
-  assert.deepEqual(custom.ems.roles, JOBS.ems.roles, 'un valor vacío no borra los nombres por defecto');
+  const custom = configureJobs('bomberos=Staff;nada=algo');
+  assert.deepEqual(jobsFor(['4'], roles, custom), ['bomberos'], 'JOB_ROLES puede agregar nombres');
 });
+
 
 test('historial de turnos, ranking y Roblox vinculado', async () => {
   const db = await fresh();

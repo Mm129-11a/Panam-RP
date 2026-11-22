@@ -47,8 +47,13 @@ test('denuncia desde la web → DM a los jueces → fiscal y abogado por DM (uno
 
   out = await runJustice(btn(`cs:take:${r.id}`), ctxOf(e, '3001'));
   assert.equal(out.private.components[0].components.length, 2);
+  const before = e.edits.length;
   out = await runJustice(btn(`cs:as:fis:${r.id}`), ctxOf(e, '3001'));
   assert.match(out.private.content, /como \*\*fiscal\*\*/);
+  const judgeEdits = e.edits.slice(before).filter((x) => x.route.startsWith('/channels/dm200'));
+  assert.equal(judgeEdits.length, 1, 'solo se actualiza el mensaje del juez que aceptó');
+  assert.equal(judgeEdits[0].route, '/channels/dm2001/messages/msg1');
+  assert.match(judgeEdits[0].body.content, /<@3001> aceptó el caso .* como \*\*fiscal\*\*/);
   out = await runJustice(btn(`cs:as:fis:${r.id}`), ctxOf(e, '3002'));
   assert.match(out.private.content, /Ya hay un fiscal/);
   out = await runJustice(btn(`cs:take:${r.id}`), ctxOf(e, '3002'));

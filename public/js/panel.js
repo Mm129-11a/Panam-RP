@@ -77,7 +77,9 @@
   const fullName = () => (S.character ? `${S.character.nombre} ${S.character.apellidos}` : S.user.name);
   const pending = () => S.fines.filter((f) => f.estado === 'pendiente');
   const owed = () => pending().reduce((a, f) => a + Number(f.monto), 0);
-  const jobInfo = (k) => S.jobInfo[k] || { name: k, icon: '💼', color: '#7aa2ff', payPerHour: 0 };
+  const jobInfo = (k) => S.jobInfo[k] || { name: k, icon: '💼', color: '#7aa2ff' };
+  const POLICE = ['policia', 'aeronaval', 'senafront']; // arrestos y juicios (la ATT: multas)
+  const hasWork = () => S.jobs.length > 0 || Boolean(S.shift);
 
   // Foto de Roblox (si no carga, queda la inicial detrás)
   function avatar(cls = '') {
@@ -147,7 +149,7 @@
     if (view === 'admin') loadAdmin();
     $$('[data-color]').forEach((el) => el.style.setProperty('--job', el.dataset.color));
     tick();
-    if (view === 'trabajos' && ['policia', 'transito'].includes(S.shift?.job) && !ui.activity) loadActivity();
+    if (view === 'trabajos' && [...POLICE, 'transito'].includes(S.shift?.job) && !ui.activity) loadActivity();
   }
 
   // ─── Inicio ───
@@ -162,7 +164,7 @@
           <p>Selecciona una categoría para acceder a las herramientas</p>
         </div>
         <div class="pn-welcome-side">
-          <a class="pn-stat" href="#trabajos"><span class="pn-stat-tag ${S.shift ? 'on' : ''}">${S.shift ? 'En turno' : 'Turno'}<i></i></span>
+          <a class="pn-stat" href="${hasWork() ? '#trabajos' : '#'}"><span class="pn-stat-tag ${S.shift ? 'on' : ''}">${S.shift ? 'En turno' : 'Turno'}<i></i></span>
             <span class="pn-stat-ico">${ico('clock')}</span><b ${S.shift ? 'data-week' : ''}>${hm(S.stats.minutos)}</b><small>Horas trabajadas</small><em>Esta semana ${ico('arrow')}</em></a>
           <a class="pn-stat" href="#banco"><span class="pn-stat-ico">${ico('bank')}</span><b>${S.account ? money(S.account.banco) : 'Sin cuenta'}</b><small>Saldo en banco</small><em>Ver banco ${ico('arrow')}</em></a>
         </div>
@@ -170,7 +172,7 @@
       <h3 class="pn-sec"><span>${ico('grid')}</span>Categorías</h3>
       <div class="pn-cats">
         ${cat('#perfil', 'green', 'user', 'Mi perfil', 'Cédula, banco, multas y antecedentes')}
-        ${cat('#trabajos', 'blue', 'power', 'Servicio Trabajos', 'Prende turno y gana dinero IC')}
+        ${hasWork() ? cat('#trabajos', 'blue', 'power', 'Servicio Trabajos', S.jobs.length === 1 ? `Tu trabajo: ${jobInfo(S.jobs[0]).name}` : 'Inicia y termina tus turnos') : ''}
         ${cat('#banco', 'gold', 'bank', 'Banco', 'Depósitos, retiros y transferencias')}
         ${cat('#tienda', 'purple', 'store', 'Carros y casas', 'Concesionario e inmobiliaria')}
         ${cat('#justicia', 'cyan', 'scale', 'Justicia', 'Denuncias y juicios')}
@@ -410,6 +412,11 @@
 
   // ─── Turnos ───
   function viewTrabajos() {
+    if (!hasWork()) {
+      return `<section class="pn-gate"><div class="pn-gate-ico">${ico('briefcase')}</div><h1>Sin rol de trabajo</h1>
+        <p>Para entrar aquí necesitas en Discord el rol de algún trabajo: Policía Nacional, Aeronaval, Senafront, ATT o Bomberos.</p>
+        <div class="pn-gate-actions"><a class="pn-btn gold lg" href="#">Volver al inicio</a></div></section>`;
+    }
     const on = S.shift;
     const j = on ? jobInfo(on.job) : null;
     let controls;
@@ -417,18 +424,19 @@
       controls = `<a class="pn-btn gold" href="#perfil">Crea tu cédula para trabajar</a>`;
     } else if (on) {
       controls = `<button class="pn-btn red lg" type="button" data-act="terminar">${ico('power')}Terminar turno</button>`;
-    } else if (S.jobs.length) {
+    } else if (S.jobs.length === 1) {
+      const only = jobInfo(S.jobs[0]);
+      controls = `<button class="pn-btn gold lg" type="button" data-act="iniciar" data-job="${esc(S.jobs[0])}">${ico('power')}Iniciar turno · ${only.icon} ${esc(only.name)}</button>`;
+    } else {
       controls = `<div class="pn-pick"><div class="ap-select"><select class="ap-input" id="pn-job" aria-label="Trabajo">${S.jobs.map((k) => `<option value="${esc(k)}">${jobInfo(k).icon} ${esc(jobInfo(k).name)}</option>`).join('')}</select></div>
         <button class="pn-btn gold lg" type="button" data-act="iniciar">${ico('power')}Iniciar turno</button></div>`;
-    } else {
-      controls = `<div class="pn-dropbox">${ico('briefcase')}<div><b>Trabajos disponibles</b><small>Necesitas el rol del trabajo en Discord (Policía, EMS, Bomberos…)</small></div></div>`;
     }
     const r = S.shiftRules;
     return `<section class="pn-work" ${j ? `data-color="${esc(j.color)}"` : ''}>
         <div class="pn-work-main">
           <span class="pn-state ${on ? 'on' : ''}"><i></i>${on ? `En servicio · ${esc(j.name)}` : 'Fuera de servicio'}</span>
           <h2>Panel de <em>trabajo</em></h2>
-          <p>Elige tu trabajo y toca <b>Iniciar turno</b> cuando entres al servidor de ER:LC. Al salir, toca <b>Terminar turno</b> y tu tiempo queda registrado. Necesitas el rol del trabajo en Discord.</p>
+          <p>${S.jobs.length > 1 ? 'Elige tu trabajo y toca' : 'Toca'} <b>Iniciar turno</b> cuando entres al servidor de ER:LC. Al salir, toca <b>Terminar turno</b> y tu tiempo queda registrado. Necesitas el rol del trabajo en Discord.</p>
           ${controls}
         </div>
         <div class="pn-work-side">
@@ -441,7 +449,7 @@
         <button type="button" class="${ui.work === 'ranking' ? 'on' : ''}" data-act="work" data-tab="ranking">${ico('trophy')}<span><b>Ranking</b><small>Estadísticas</small></span></button>
       </div>
       ${ui.work === 'ranking' ? ranking() : historial()}
-      ${['policia', 'transito'].includes(S.shift?.job) ? policeTools() : ''}`;
+      ${[...POLICE, 'transito'].includes(S.shift?.job) ? policeTools() : ''}`;
   }
 
   function historial() {
@@ -465,9 +473,9 @@
   function policeTools() {
     // Multas: solo la ATT. Arrestos: la Policía.
     const att = S.shift?.job === 'transito';
-    const poli = S.shift?.job === 'policia';
+    const poli = POLICE.includes(S.shift?.job);
     const duty = att || poli;
-    const unit = att ? 'ATT' : 'Policía';
+    const unit = att ? 'ATT' : jobInfo(S.shift.job).name;
     const results = ui.search === null ? '' : ui.search.length ? `<ul class="pn-list">${ui.search.map((p) => `<li><span class="pn-li-ico blue">${ico('user')}</span>
         <div><b>${esc(p.nombre)} ${esc(p.apellidos)}</b><small>${esc(p.cedula)} · ${esc(isoBonito(p.nacimiento))} · ${esc(p.nacionalidad)} · Roblox: ${esc(p.roblox_name)}</small>
         <small>${p.multas ? `<span class="pn-tag bad">${p.multas} multa(s) pendiente(s)</span>` : '<span class="pn-tag ok">Sin multas</span>'} ${p.arrestos ? `<span class="pn-tag">${p.arrestos} arresto(s)</span>` : ''} ${(p.placas || []).map((x) => `<span class="pn-plate sm">${esc(x)}</span>`).join(' ')}</small></div>
@@ -904,7 +912,7 @@
     }
     run(null, async () => {
       if (act === 'iniciar') {
-        await api('/api/panel/turno/iniciar', { job: $('#pn-job')?.value });
+        await api('/api/panel/turno/iniciar', { job: b.dataset.job || $('#pn-job')?.value });
         toast('Turno iniciado. ¡Buen trabajo!');
         ui.activity = null;
         await refresh();

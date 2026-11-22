@@ -17,7 +17,7 @@ import {
 import { createRelayFetch, createSmartFetch } from './lib/relay.js';
 import os from 'node:os';
 import { connectPostgres, connectSqlite, migrate } from './lib/db.js';
-import { configureJobs, jobsFor, publicJobs, SHIFT } from './lib/jobs.js';
+import { configureJobs, jobsFor, publicJobs, SHIFT, hasPolice } from './lib/jobs.js';
 import * as panel from './lib/panel.js';
 import { buildCommands, COMMAND_LIST, COMMAND_NAMES, handleCommand, sameCommands } from './lib/commands.js';
 import { startGateway } from './lib/gateway.js';
@@ -979,16 +979,16 @@ post('/policia/multa', async ({ user, db: d, jobs }, req) => {
   return { fine: await panel.issueFine(d, user.id, req.body || {}) };
 });
 post('/policia/arresto', async ({ user, db: d, jobs }, req) => {
-  if (!jobs.includes('policia')) throw new panel.PanelError(403, 'No tienes el rol de Policía.');
+  if (!hasPolice(jobs)) throw new panel.PanelError(403, 'No tienes rol de Policía (Policía Nacional, Aeronaval o Senafront).');
   return { arrest: await panel.registerArrest(d, user.id, req.body || {}) };
 });
 app.get('/api/panel/policia/buscar', panelLimit, panelRoute(async ({ user, db: d, jobs }, req) => {
-  if (!jobs.includes('policia') && !jobs.includes('transito')) throw new panel.PanelError(403, 'No tienes el rol de Policía ni de ATT.');
+  if (!hasPolice(jobs) && !jobs.includes('transito')) throw new panel.PanelError(403, 'No tienes rol de Policía ni de ATT.');
   return { results: await panel.searchCitizens(d, user.id, req.query.q) };
 }));
 // Ficha completa (base de datos): Policía o ATT en turno
 app.get('/api/panel/policia/ficha', panelLimit, panelRoute(async ({ user, db: d, jobs }, req) => {
-  if (!jobs.includes('policia') && !jobs.includes('transito')) throw new panel.PanelError(403, 'No tienes el rol de Policía ni de ATT.');
+  if (!hasPolice(jobs) && !jobs.includes('transito')) throw new panel.PanelError(403, 'No tienes rol de Policía ni de ATT.');
   const rec = await panel.citizenRecord(d, user.id, req.query.cedula);
   const avatar = rec.persona.roblox_name ? (await lookupRoblox(rec.persona.roblox_name).catch(() => null))?.avatar || null : null;
   return { ...rec, avatar };
@@ -1001,14 +1001,14 @@ const justiceEnv = (d) => ({
   api: (m, r, b, o) => (bot ? bot.call(m, r, b, o) : Promise.resolve({ ok: false })),
 });
 app.get('/api/panel/justicia', panelLimit, panelRoute(async ({ user, db: d, jobs }) => ({
-  cases: await listMyCases(d, user.id), tipos: DENUNCIAS.map(([k, n, e]) => ({ k, n, e })), policia: jobs.includes('policia'),
+  cases: await listMyCases(d, user.id), tipos: DENUNCIAS.map(([k, n, e]) => ({ k, n, e })), policia: hasPolice(jobs),
 })));
 post('/justicia/denuncia', async ({ user, db: d }, req) => {
   if (!bot) throw new panel.PanelError(503, 'El bot no está conectado.');
   return submitCase(justiceEnv(d), user, { ...(req.body || {}), origen: 'denuncia' });
 });
 post('/justicia/juicio', async ({ user, db: d, jobs }, req) => {
-  if (!jobs.includes('policia')) throw new panel.PanelError(403, 'Solo la Policía (Policía Nacional, Aeronaval o Senafront) puede mandar juicios.');
+  if (!hasPolice(jobs)) throw new panel.PanelError(403, 'Solo la Policía (Policía Nacional, Aeronaval o Senafront) puede mandar juicios.');
   if (!bot) throw new panel.PanelError(503, 'El bot no está conectado.');
   const me = await panel.getCharacter(d, user.id);
   return submitCase(justiceEnv(d), user, { ...(req.body || {}), origen: 'juicio', denunciante: me ? `${me.nombre} ${me.apellidos}` : user.name });
@@ -1078,7 +1078,7 @@ post('/admin/catalogo/quitar', async ({ user, db: d, staff }, req) => {
 });
 
 app.get('/api/panel/policia/actividad', panelLimit, panelRoute(async ({ user, db: d, jobs }) => {
-  if (!jobs.includes('policia') && !jobs.includes('transito')) throw new panel.PanelError(403, 'No tienes el rol de Policía ni de ATT.');
+  if (!hasPolice(jobs) && !jobs.includes('transito')) throw new panel.PanelError(403, 'No tienes rol de Policía ni de ATT.');
   return panel.officerActivity(d, user.id);
 }));
 
