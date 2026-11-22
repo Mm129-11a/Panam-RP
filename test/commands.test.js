@@ -85,12 +85,16 @@ test('policía: multar y arrestar desde Discord sale en el expediente web', asyn
   await citizen(db, ANA, 'Ana');
   await citizen(db, POLI, 'Poli');
   const multa = (who, extra) => handleCommand(cmd(who, 'multar', [{ name: 'usuario', type: 6, value: ANA.id }, { name: 'monto', type: 4, value: 700 }, { name: 'motivo', type: 3, value: 'Exceso de velocidad' }]), ctx(db, extra));
-  assert.match((await multa(POLI)).private.content, /rol de Policía/);
-  assert.match((await multa(POLI, { jobs: ['policia'] })).private.content, /turno de Policía/);
-  await P.startShift(db, POLI.id, 'policia', { jobs: JOBS, allowed: ['policia'], now: NOW });
-  const ok = await multa(POLI, { jobs: ['policia'] });
+  // Multas: solo la ATT (la Policía no puede)
+  assert.match((await multa(POLI)).private.content, /Solo la ATT/);
+  assert.match((await multa(POLI, { jobs: ['policia'] })).private.content, /Solo la ATT/);
+  assert.match((await multa(POLI, { jobs: ['transito'] })).private.content, /turno de ATT/);
+  await P.startShift(db, POLI.id, 'transito', { jobs: JOBS, allowed: ['transito'], now: NOW });
+  const ok = await multa(POLI, { jobs: ['transito'] });
   assert.equal(ok.public.embeds[0].fields[0].value, '$700');
   assert.deepEqual(ok.public.allowed_mentions, { users: [ANA.id] });
+  await P.endShift(db, POLI.id, { jobs: JOBS, now: NOW + 10 * 60_000 });
+  await P.startShift(db, POLI.id, 'policia', { jobs: JOBS, allowed: ['policia'], now: NOW + 11 * 60_000 });
   const arr = await handleCommand(cmd(POLI, 'arrestar', [{ name: 'usuario', type: 6, value: ANA.id }, { name: 'minutos', type: 4, value: 15 }, { name: 'cargos', type: 3, value: 'Robo' }]), ctx(db, { jobs: ['policia'] }));
   assert.equal(arr.public.embeds[0].title, '🚔 Arresto');
   // lo ve la persona en la web

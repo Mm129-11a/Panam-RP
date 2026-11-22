@@ -136,7 +136,7 @@
     main.innerHTML = banner + ({ perfil: viewPerfil, trabajos: viewTrabajos, banco: viewBanco }[view] || viewInicio)();
     $$('[data-color]').forEach((el) => el.style.setProperty('--job', el.dataset.color));
     tick();
-    if (view === 'trabajos' && S.shift?.job === 'policia' && !ui.activity) loadActivity();
+    if (view === 'trabajos' && ['policia', 'transito'].includes(S.shift?.job) && !ui.activity) loadActivity();
   }
 
   // ─── Inicio ───
@@ -427,7 +427,7 @@
         <button type="button" class="${ui.work === 'ranking' ? 'on' : ''}" data-act="work" data-tab="ranking">${ico('trophy')}<span><b>Ranking</b><small>Estadísticas</small></span></button>
       </div>
       ${ui.work === 'ranking' ? ranking() : historial()}
-      ${S.jobs.includes('policia') ? policeTools() : ''}`;
+      ${S.jobs.includes('policia') || S.jobs.includes('transito') ? policeTools() : ''}`;
   }
 
   function historial() {
@@ -449,12 +449,16 @@
   }
 
   function policeTools() {
-    const duty = S.shift?.job === 'policia';
+    // Multas: solo la ATT. Arrestos: la Policía.
+    const att = S.shift?.job === 'transito';
+    const poli = S.shift?.job === 'policia';
+    const duty = att || poli;
+    const unit = S.jobs.includes('transito') && !S.jobs.includes('policia') ? 'ATT' : S.jobs.includes('policia') && !S.jobs.includes('transito') ? 'Policía' : 'Policía o ATT';
     const results = ui.search === null ? '' : ui.search.length ? `<ul class="pn-list">${ui.search.map((p) => `<li><span class="pn-li-ico blue">${ico('user')}</span>
         <div><b>${esc(p.nombre)} ${esc(p.apellidos)}</b><small>${esc(p.cedula)} · ${esc(isoBonito(p.nacimiento))} · ${esc(p.nacionalidad)} · Roblox: ${esc(p.roblox_name)}</small>
         <small>${p.multas ? `<span class="pn-tag bad">${p.multas} multa(s) pendiente(s)</span>` : '<span class="pn-tag ok">Sin multas</span>'} ${p.arrestos ? `<span class="pn-tag">${p.arrestos} arresto(s)</span>` : ''}</small></div>
-        <div class="pn-li-r col"><button class="pn-btn gold sm" type="button" data-act="usar" data-cedula="${esc(p.cedula)}" data-to="multa">Multar</button>
-        <button class="pn-btn ghost sm" type="button" data-act="usar" data-cedula="${esc(p.cedula)}" data-to="arresto">Arrestar</button></div></li>`).join('')}</ul>`
+        <div class="pn-li-r col">${att ? `<button class="pn-btn gold sm" type="button" data-act="usar" data-cedula="${esc(p.cedula)}" data-to="multa">Multar</button>` : ''}
+        ${poli ? `<button class="pn-btn ghost sm" type="button" data-act="usar" data-cedula="${esc(p.cedula)}" data-to="arresto">Arrestar</button>` : ''}</div></li>`).join('')}</ul>`
       : empty('search', 'No se encontró a nadie');
     const act = ui.activity;
     const activity = !duty ? '<p class="pn-muted">Aparece cuando estés en turno.</p>' : !act ? '<p class="pn-muted">Cargando…</p>'
@@ -463,8 +467,8 @@
         ...act.arrests.map((a) => ({ t: a.created_at, h: `<li><span class="pn-li-ico red">${ico('gavel')}</span><div><b>Arresto · ${esc(a.nombre)} ${esc(a.apellidos)}</b><small>${esc(a.cargos)} · ${fechaHora(a.created_at)}</small></div><div class="pn-li-r"><span class="pn-tag">${a.minutos} min</span></div></li>` })),
       ].sort((a, b) => b.t - a.t).slice(0, 10).map((x) => x.h).join('')}</ul>` : empty('shield', 'Aún no has puesto multas ni arrestos');
     return `<section class="pn-box pn-police ${duty ? '' : 'locked'}">
-      <div class="pn-box-h"><span class="pn-box-ico blue">${ico('shield')}</span><div><b>Herramientas de Policía</b><small>Buscar ciudadanos, multas y arrestos</small></div></div>
-      ${duty ? '' : `<div class="pn-note warn">${ico('alert')}<div>Inicia tu turno de <b>Policía</b> para usar estas herramientas.</div></div>`}
+      <div class="pn-box-h"><span class="pn-box-ico blue">${ico('shield')}</span><div><b>Herramientas de ${unit}</b><small>${unit === 'ATT' ? 'Buscar ciudadanos y poner multas' : unit === 'Policía' ? 'Buscar ciudadanos y registrar arrestos' : 'Buscar ciudadanos, multas (ATT) y arrestos (Policía)'}</small></div></div>
+      ${duty ? '' : `<div class="pn-note warn">${ico('alert')}<div>Inicia tu turno de <b>${unit}</b> para usar estas herramientas.</div></div>`}
       <fieldset ${duty ? '' : 'disabled'}>
         <form data-form="buscar" class="pn-search" novalidate>${ico('search')}
           <input class="ap-input" name="q" maxlength="40" placeholder="Buscar por nombre, cédula o usuario de Roblox" autocomplete="off" aria-label="Buscar ciudadano">
@@ -472,20 +476,20 @@
         </form>
         ${results}
         <div class="pn-two">
-          <form data-form="multa" class="pn-form-box" novalidate>
-            <h4>${ico('receipt')}Poner multa</h4>
+          ${!S.jobs.includes('transito') ? '' : `<form data-form="multa" class="pn-form-box" novalidate>
+            <h4>${ico('receipt')}Poner multa (ATT)</h4>
             ${field('m-cedula', 'Cédula', '<input class="ap-input" id="f-m-cedula" name="cedula" maxlength="20" placeholder="8-123-4567" autocomplete="off" required>')}
             ${field('m-motivo', 'Motivo', '<input class="ap-input" id="f-m-motivo" name="motivo" maxlength="200" placeholder="Ej: Exceso de velocidad" required>')}
             ${field('m-monto', `Monto ($${S.money.fineMin}–$${S.money.fineMax.toLocaleString('es-PA')})`, '<input class="ap-input" id="f-m-monto" name="monto" inputmode="numeric" placeholder="Ej: 750" required>')}
             <button class="pn-btn gold" type="submit">Poner multa</button>
-          </form>
-          <form data-form="arresto" class="pn-form-box" novalidate>
+          </form>`}
+          ${!S.jobs.includes('policia') ? '' : `<form data-form="arresto" class="pn-form-box" novalidate>
             <h4>${ico('gavel')}Registrar arresto</h4>
             ${field('a-cedula', 'Cédula', '<input class="ap-input" id="f-a-cedula" name="cedula" maxlength="20" placeholder="8-123-4567" autocomplete="off" required>')}
             ${field('a-cargos', 'Cargos', '<input class="ap-input" id="f-a-cargos" name="cargos" maxlength="300" placeholder="Ej: Robo a mano armada" required>')}
             ${field('a-minutos', 'Tiempo en celda (minutos)', '<input class="ap-input" id="f-a-minutos" name="minutos" inputmode="numeric" placeholder="Ej: 20" required>')}
             <button class="pn-btn gold" type="submit">Registrar arresto</button>
-          </form>
+          </form>`}
         </div>
         <h3 class="pn-h3">Mi actividad</h3>${activity}
       </fieldset></section>`;

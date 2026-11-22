@@ -114,12 +114,18 @@ test('policía: buscar, multar y arrestar solo en turno', async () => {
   assert.equal((await P.searchCitizens(db, POLI.id, '%_%')).length, 0, 'los comodines no listan a todos');
   await rejects(() => P.searchCitizens(db, POLI.id, 'a'), 400);
 
-  const f = await P.issueFine(db, POLI.id, { cedula: ana.cedula, motivo: 'Exceso de velocidad', monto: '750' }, NOW);
+  // Multas: solo la ATT en turno (la Policía no puede)
+  await rejects(() => P.issueFine(db, POLI.id, { cedula: ana.cedula, motivo: 'Exceso de velocidad', monto: 750 }, NOW), 403, /ATT/);
+  const ATT = { id: '1009', name: 'att' };
+  await citizen(db, ATT, { nombre: 'Tito', apellidos: 'Tránsito' }, 0.91);
+  await P.startShift(db, ATT.id, 'transito', { jobs: JOBS, allowed: ['transito'], now: NOW });
+  assert.equal((await P.searchCitizens(db, ATT.id, 'ANA pér')).length, 1, 'la ATT también busca');
+  const f = await P.issueFine(db, ATT.id, { cedula: ana.cedula, motivo: 'Exceso de velocidad', monto: '750' }, NOW);
   assert.deepEqual(f, { a: 'Ana Pérez Gómez', cedula: ana.cedula, monto: 750 });
-  await rejects(() => P.issueFine(db, POLI.id, { cedula: ana.cedula, motivo: 'x', monto: 750 }, NOW), 400);
-  await rejects(() => P.issueFine(db, POLI.id, { cedula: ana.cedula, motivo: 'Abuso', monto: 9_999_999 }, NOW), 400);
-  const me = await P.getCharacter(db, POLI.id);
-  await rejects(() => P.issueFine(db, POLI.id, { cedula: me.cedula, motivo: 'Autoexamen', monto: 100 }, NOW), 400, /ti mismo/);
+  await rejects(() => P.issueFine(db, ATT.id, { cedula: ana.cedula, motivo: 'x', monto: 750 }, NOW), 400);
+  await rejects(() => P.issueFine(db, ATT.id, { cedula: ana.cedula, motivo: 'Abuso', monto: 9_999_999 }, NOW), 400);
+  const me = await P.getCharacter(db, ATT.id);
+  await rejects(() => P.issueFine(db, ATT.id, { cedula: me.cedula, motivo: 'Autoexamen', monto: 100 }, NOW), 400, /ti mismo/);
 
   const a = await P.registerArrest(db, POLI.id, { cedula: ana.cedula, cargos: 'Robo a mano armada', minutos: 30 }, NOW);
   assert.equal(a.minutos, 30);
@@ -129,7 +135,7 @@ test('policía: buscar, multar y arrestar solo en turno', async () => {
   assert.equal(row.multas, 1);
   assert.equal(row.arrestos, 1);
   const act = await P.officerActivity(db, POLI.id);
-  assert.equal(act.fines[0].monto, 750);
+  assert.equal((await P.officerActivity(db, ATT.id)).fines[0].monto, 750);
   assert.equal(act.arrests[0].cargos, 'Robo a mano armada');
   const arrests = await P.listArrests(db, ANA.id);
   assert.equal(arrests[0].officer_name, 'Poli Martínez');

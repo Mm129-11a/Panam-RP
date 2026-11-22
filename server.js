@@ -21,6 +21,8 @@ import { configureJobs, jobsFor, publicJobs, SHIFT } from './lib/jobs.js';
 import * as panel from './lib/panel.js';
 import { buildCommands, COMMAND_LIST, COMMAND_NAMES, handleCommand, sameCommands } from './lib/commands.js';
 import { startGateway } from './lib/gateway.js';
+import { OLD_NAMES, COMPONENT_RE, commandModal, componentModal, autocomplete as oldAutocomplete, runOld, runComponent, housekeeping, getCfg as botCfg } from './lib/oldbot.js';
+import { JUSTICE_RE, justiceModal, runJustice } from './lib/justicia.js';
 import { createErlc } from './lib/erlc.js';
 import { fetchRobloxProfile, hasCode, LINK_TTL, makeCode } from './lib/robloxlink.js';
 
@@ -121,7 +123,9 @@ const dfetch = createSmartFetch({
 });
 const discordFetch = (url, opts = {}) => dfetch(url, { ...opts, signal: AbortSignal.timeout(8000) });
 const bot = BOT_TOKEN ? createDiscordBot({ token: BOT_TOKEN, apiBase: API, fetchImpl: dfetch }) : null;
-const erlc = ERLC_KEY ? createErlc({ key: ERLC_KEY }) : null;
+// La llave de ER:LC viene de Render (ERLC_API_KEY) o de /erlc set_key (guardada en la base de datos)
+let erlc = ERLC_KEY ? createErlc({ key: ERLC_KEY }) : null;
+function setErlcKey(key) { erlc = key ? createErlc({ key }) : null; }
 
 // Antes de iniciar un turno: si hay llave de ER:LC, la persona debe estar dentro del servidor.
 async function verifyInGame(character) {
@@ -615,18 +619,51 @@ async function applyDecision(effect, interaction) {
 }
 
 // Comandos de barra (/banco, /cedula, /multar…): usan la misma base de datos que el panel.
-async function runCommand(interaction) {
+// Contexto para los comandos del bot (los de antes y los de la web)
+async function botContext(interaction, store) {
+  const guildId = interaction.guild_id || HOME_GUILD;
+  const roles = Array.isArray(interaction.member?.roles) ? interaction.member.roles : [];
+  const guildRoles = bot ? await bot.guildRoles(guildId) : [];
+  const u = interaction.member?.user || interaction.user || {};
+  return {
+    db: store,
+    api: (method, route, body, opts) => bot.call(method, route, body, opts),
+    dm: (userId, payload) => bot.dm(userId, payload),
+    me: { id: u.id, name: u.global_name || u.username || '', username: u.username || '' },
+    roles,
+    permissions: interaction.member?.permissions || '0',
+    guildId,
+    channelId: interaction.channel_id,
+    botId: interaction.application_id || CLIENT_ID,
+    jobs: jobsFor(roles, guildRoles, JOBS),
+    staffRoles: STAFF_ROLES.length ? await bot.resolveRoles(guildId, STAFF_ROLES) : [],
+    siteUrl: BASE_URL,
+    now: () => Date.now(),
+    lookupRoblox: (name) => lookupRoblox(name),
+    robloxFor: (id) => robloxFor(store, id),
+    robloxAvatar: async (name) => (name ? (await lookupRoblox(name).catch(() => null))?.avatar || null : null),
+    erlc,
+    setErlcKey,
+  };
+}
+
+// Comandos de barra y botones: la respuesta "pensando…" ya se mandó; aquí se hace el trabajo y se entrega
+async function runInteraction(interaction, kind) {
   let out;
   try {
     const store = await getDb();
     if (!store) {
       out = { private: { content: '❌ La base de datos no responde. Intenta en un momento.' } };
+    } else if (kind === 'old' || kind === 'component' || kind === 'justice') {
+      const ctx = await botContext(interaction, store);
+      out = kind === 'old' ? await runOld(interaction, ctx)
+        : kind === 'justice' ? await runJustice(interaction, ctx)
+          : await runComponent(interaction, ctx);
+      out ||= { private: { content: '❌ Este botón ya no funciona.' } };
     } else {
       const roles = Array.isArray(interaction.member?.roles) ? interaction.member.roles : [];
       const guildRoles = bot ? await bot.guildRoles(interaction.guild_id || HOME_GUILD) : [];
       const [wlRole] = bot && WHITELIST_ROLE ? await bot.resolveRoles(interaction.guild_id || HOME_GUILD, [WHITELIST_ROLE]) : [];
-      const known = COMMAND_NAMES.includes(interaction.data?.name);
-      if (!known) console.log(`[comando] desconocido: /${interaction.data?.name} (tipo ${interaction.data?.type ?? '?'})`);
       out = await handleCommand(interaction, {
         db: store,
         jobs: jobsFor(roles, guildRoles, JOBS),
@@ -640,12 +677,18 @@ async function runCommand(interaction) {
       });
     }
   } catch (err) {
-    console.error('[comando]', interaction.data?.name, err.message);
-    out = { private: { content: '❌ Algo falló. Intenta de nuevo.' } };
+    console.error('[comando]', interaction.data?.name || interaction.data?.custom_id, err.message);
+    out = { private: { content: err.code === 'llave' ? '❌ La llave de ER:LC no es válida (/erlc set_key).' : err.code === 'apagado' ? '❌ El servidor de ER:LC está apagado.' : '❌ Algo falló. Intenta de nuevo.' } };
   }
+  await deliver(interaction, out);
+}
+
+async function deliver(interaction, out) {
   const base = `${API}/webhooks/${interaction.application_id || CLIENT_ID}/${encodeURIComponent(interaction.token)}`;
   const json = { 'Content-Type': 'application/json' };
-  await discordFetch(`${base}/messages/@original`, { method: 'PATCH', headers: json, body: JSON.stringify({ allowed_mentions: { parse: [] }, ...out.private }) })
+  const priv = { allowed_mentions: { parse: [] }, ...out.private };
+  if (priv.content === '') delete priv.content;
+  await discordFetch(`${base}/messages/@original`, { method: 'PATCH', headers: json, body: JSON.stringify(priv) })
     .catch((err) => console.error('[comando] respuesta:', err.message));
   if (out.public) {
     await discordFetch(base, { method: 'POST', headers: json, body: JSON.stringify({ allowed_mentions: { parse: [] }, ...out.public }) })
@@ -672,30 +715,44 @@ async function syncCommands() {
   const global = await bot.call('GET', `/applications/${CLIENT_ID}/commands`);
   if (global.ok && Array.isArray(global.data)) {
     OLD_COMMANDS = global.data.map((c) => c.name);
-    // Cómo está hecho cada comando viejo (nombre, opciones), para pasarlos a la web con el mismo nombre
-    for (const c of global.data) console.log(`[comando viejo] ${JSON.stringify({ n: c.name, d: c.description, o: c.options || [], p: c.default_member_permissions || null })}`);
-    if (OLD_COMMANDS.length) console.log(`Comandos del bot viejo (${OLD_COMMANDS.length}): ${DISCORD_MODE === 'gateway' ? 'los contesta el bot viejo' : 'NO funcionan en modo url'}`);
+    if (OLD_COMMANDS.length) console.log(`Comandos de antes (${OLD_COMMANDS.length}): los contesta la web con la misma base de datos`);
   }
 }
 let OLD_COMMANDS = [];
 let OUR_COMMAND_IDS = new Set();
 let gatewayOnce = false;
 
-// ¿Esta interacción es de la web? (lo demás es del bot viejo y se deja pasar)
-function isOurs(i) {
-  if (i?.type === 2 || i?.type === 4) {
-    if (OUR_COMMAND_IDS.size) return OUR_COMMAND_IDS.has(i.data?.id);
-    return Boolean(i.data?.guild_id) && COMMAND_NAMES.includes(i.data?.name);
-  }
-  if (i?.type === 3 || i?.type === 5) return /^wl:/.test(String(i.data?.custom_id || ''));
-  return false;
-}
 
 // Respuesta a una interacción (igual por la URL o por el gateway). 'after' sigue trabajando después de responder.
+const thinking = { type: 5, data: { flags: 64 } }; // "El bot está pensando…" (privado)
 async function answerInteraction(interaction) {
+  const name = interaction.data?.name;
+  const cid = String(interaction.data?.custom_id || '');
+  const u = interaction.member?.user || interaction.user || {};
+  const lite = { me: { id: u.id, name: u.global_name || u.username || '' } };
+  const later = (kind) => ({ response: thinking, after: () => runInteraction(interaction, kind).catch((err) => console.error('[comando]', err.message)) });
+
+  if (interaction.type === 4) { // autocompletar (/config … clave)
+    return { response: { type: 8, data: { choices: name === 'config' ? oldAutocomplete(interaction) : [] } } };
+  }
   if (interaction.type === 2) {
-    // "El bot está pensando…" (privado) y el resultado llega en unos segundos
-    return { response: { type: 5, data: { flags: 64 } }, after: () => runCommand(interaction).catch((err) => console.error('[comando]', err.message)) };
+    if (OLD_NAMES.includes(name)) {
+      const modal = commandModal(interaction, lite);
+      return modal ? { response: { type: 9, data: modal } } : later('old');
+    }
+    if (!COMMAND_NAMES.includes(name)) console.log(`[comando] desconocido: /${name}`);
+    return later('web');
+  }
+  if ((interaction.type === 3 || interaction.type === 5) && JUSTICE_RE.test(cid)) {
+    const modal = justiceModal(interaction);
+    return modal ? { response: { type: 9, data: modal } } : later('justice');
+  }
+  if ((interaction.type === 3 || interaction.type === 5) && COMPONENT_RE.test(cid)) {
+    const modal = componentModal(interaction);
+    return modal ? { response: { type: 9, data: modal } } : later('component');
+  }
+  if ((interaction.type === 3 || interaction.type === 5) && !cid.startsWith('wl:')) {
+    return { response: { type: 4, data: { flags: 64, content: '❌ Este botón es del sistema anterior y ya no funciona. Pide al staff que lo vuelva a publicar (con /config canal).' } } };
   }
   let roles = [];
   if (interaction.type !== 1 && interaction.guild_id) {
@@ -707,11 +764,7 @@ async function answerInteraction(interaction) {
 
 // Por el gateway: Discord manda las interacciones a los dos bots; la web contesta solo las suyas.
 async function onGatewayInteraction(interaction) {
-  if (!isOurs(interaction)) {
-    // Nadie contestó (el bot viejo no está): mejor un aviso que "La aplicación no respondió"
-    if (interaction?.type === 2) setTimeout(() => fallbackReply(interaction).catch(() => {}), 1800);
-    return;
-  }
+  if (!interaction?.id || !interaction.token) return;
   const { response, after } = await answerInteraction(interaction);
   const r = await discordFetch(`${API}/interactions/${interaction.id}/${encodeURIComponent(interaction.token)}/callback`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(response),
@@ -723,13 +776,6 @@ async function onGatewayInteraction(interaction) {
   after?.();
 }
 
-async function fallbackReply(interaction) {
-  const body = { type: 4, data: { flags: 64, content: `⏳ **/${interaction.data?.name}** se está pasando al sistema nuevo de Panamá RP y estará listo muy pronto.\nMientras tanto puedes usar: ${COMMAND_LIST}.` } };
-  const r = await discordFetch(`${API}/interactions/${interaction.id}/${encodeURIComponent(interaction.token)}/callback`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  }).catch(() => null);
-  if (r?.ok) console.log(`[comando] /${interaction.data?.name}: nadie lo contestó, se mandó el aviso`);
-}
 
 // En modo gateway, la Interactions Endpoint URL tiene que estar vacía (si no, Discord no manda nada
 // por el gateway y el bot viejo se queda sin sus comandos). Solo se borra si es la de esta web.
@@ -887,7 +933,7 @@ post('/multas/pagar', async ({ user, db: d }, req) => ({ account: await panel.pa
 post('/turno/iniciar', async ({ user, db: d, jobs }, req) => ({ shift: await panel.startShift(d, user.id, req.body?.job, { jobs: JOBS, allowed: jobs, verify: verifyInGame }) }));
 post('/turno/terminar', async ({ user, db: d }) => ({ result: await panel.endShift(d, user.id, { jobs: JOBS }) }));
 post('/policia/multa', async ({ user, db: d, jobs }, req) => {
-  if (!jobs.includes('policia')) throw new panel.PanelError(403, 'No tienes el rol de Policía.');
+  if (!jobs.includes('transito')) throw new panel.PanelError(403, 'Solo la ATT puede poner multas.');
   return { fine: await panel.issueFine(d, user.id, req.body || {}) };
 });
 post('/policia/arresto', async ({ user, db: d, jobs }, req) => {
@@ -895,11 +941,11 @@ post('/policia/arresto', async ({ user, db: d, jobs }, req) => {
   return { arrest: await panel.registerArrest(d, user.id, req.body || {}) };
 });
 app.get('/api/panel/policia/buscar', panelLimit, panelRoute(async ({ user, db: d, jobs }, req) => {
-  if (!jobs.includes('policia')) throw new panel.PanelError(403, 'No tienes el rol de Policía.');
+  if (!jobs.includes('policia') && !jobs.includes('transito')) throw new panel.PanelError(403, 'No tienes el rol de Policía ni de ATT.');
   return { results: await panel.searchCitizens(d, user.id, req.query.q) };
 }));
 app.get('/api/panel/policia/actividad', panelLimit, panelRoute(async ({ user, db: d, jobs }) => {
-  if (!jobs.includes('policia')) throw new panel.PanelError(403, 'No tienes el rol de Policía.');
+  if (!jobs.includes('policia') && !jobs.includes('transito')) throw new panel.PanelError(403, 'No tienes el rol de Policía ni de ATT.');
   return panel.officerActivity(d, user.id);
 }));
 
@@ -965,6 +1011,21 @@ app.listen(PORT, () => {
       .catch((err) => console.log(`Puente a Discord: no responde (${err.message})`));
   } else {
     console.log('Puente a Discord: no configurado (RELAY_URL / RELAY_SECRET)');
+  }
+  // Llave de ER:LC guardada con /erlc set_key (si no está en Render) y tareas cada minuto
+  if (bot) {
+    setTimeout(async () => {
+      const store = await getDb();
+      if (!store) return;
+      if (!erlc) {
+        const key = await botCfg(store, 'secreto', 'erlc_key').catch(() => '');
+        if (key) { setErlcKey(key); console.log('ER:LC: llave cargada de la base de datos (/erlc set_key)'); }
+      }
+      setInterval(() => {
+        getDb().then((d) => d && housekeeping({ db: d, api: (m, r, b, o) => bot.call(m, r, b, o), guildId: HOME_GUILD, now: () => Date.now() }))
+          .catch((err) => console.error('[tareas]', err.message));
+      }, 60_000);
+    }, 5000);
   }
   if (bot && DISCORD_MODE === 'gateway') {
     startGateway({

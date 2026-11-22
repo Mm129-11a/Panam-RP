@@ -80,3 +80,15 @@ La web se conecta al gateway de Discord como un bot normal, así **el bot viejo 
 propios comandos: Discord les manda todo a los dos y cada uno contesta solo los suyos. Para eso la *Interactions
 Endpoint URL* de la app debe estar vacía (la web la borra sola si apunta a ella). Con `DISCORD_INTERACCIONES=url`
 se usa la URL en vez del gateway (entonces el bot viejo no recibe sus comandos).
+
+## Comandos de antes (41) y justicia
+
+La web contesta también los 41 comandos que ya tenía el bot (`/balance`, `/dni`, `/multa`, `/arrestar`, `/ticket`,
+`/casino`, `/shop`, `/banda`, `/mod`, `/config`…), con el mismo nombre y opciones, sobre la misma base de datos:
+`/dni crear` es la cédula de la web, `/balance` es el mismo banco, y multas y arrestos salen en el expediente.
+
+- **Multas:** solo la ATT. **Arrestos y antecedentes:** Policía Nacional, Aeronaval y Senafront.
+- **Juicios:** después de `/arrestar usuario`, el oficial toca *Enviar a juicio* → llega a los jueces.
+- **Denuncias:** `/config canal denuncias #canal` publica los botones (Robo, Agresión… y Otra).
+- Juez acepta → lo toman un fiscal y un abogado (uno de cada). Canales: `/config canal jueces` y `/config canal abogados`.
+- Otros paneles: `/config canal tickets` y `/config canal verificacion` publican sus botones.
