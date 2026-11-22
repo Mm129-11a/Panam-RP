@@ -672,6 +672,8 @@ async function syncCommands() {
   const global = await bot.call('GET', `/applications/${CLIENT_ID}/commands`);
   if (global.ok && Array.isArray(global.data)) {
     OLD_COMMANDS = global.data.map((c) => c.name);
+    // Cómo está hecho cada comando viejo (nombre, opciones), para pasarlos a la web con el mismo nombre
+    for (const c of global.data) console.log(`[comando viejo] ${JSON.stringify({ n: c.name, d: c.description, o: c.options || [], p: c.default_member_permissions || null })}`);
     if (OLD_COMMANDS.length) console.log(`Comandos del bot viejo (${OLD_COMMANDS.length}): ${DISCORD_MODE === 'gateway' ? 'los contesta el bot viejo' : 'NO funcionan en modo url'}`);
   }
 }
@@ -705,7 +707,11 @@ async function answerInteraction(interaction) {
 
 // Por el gateway: Discord manda las interacciones a los dos bots; la web contesta solo las suyas.
 async function onGatewayInteraction(interaction) {
-  if (!isOurs(interaction)) return;
+  if (!isOurs(interaction)) {
+    // Nadie contestó (el bot viejo no está): mejor un aviso que "La aplicación no respondió"
+    if (interaction?.type === 2) setTimeout(() => fallbackReply(interaction).catch(() => {}), 1800);
+    return;
+  }
   const { response, after } = await answerInteraction(interaction);
   const r = await discordFetch(`${API}/interactions/${interaction.id}/${encodeURIComponent(interaction.token)}/callback`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(response),
@@ -715,6 +721,14 @@ async function onGatewayInteraction(interaction) {
     return;
   }
   after?.();
+}
+
+async function fallbackReply(interaction) {
+  const body = { type: 4, data: { flags: 64, content: `⏳ **/${interaction.data?.name}** se está pasando al sistema nuevo de Panamá RP y estará listo muy pronto.\nMientras tanto puedes usar: ${COMMAND_LIST}.` } };
+  const r = await discordFetch(`${API}/interactions/${interaction.id}/${encodeURIComponent(interaction.token)}/callback`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }).catch(() => null);
+  if (r?.ok) console.log(`[comando] /${interaction.data?.name}: nadie lo contestó, se mandó el aviso`);
 }
 
 // En modo gateway, la Interactions Endpoint URL tiene que estar vacía (si no, Discord no manda nada
