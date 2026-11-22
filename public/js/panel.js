@@ -162,7 +162,6 @@
   function viewInicio() {
     return `${S.character ? '' : `<div class="pn-note info">${ico('id')}<div><b>Crea tu cédula</b> para abrir tu cuenta del banco y poder trabajar.</div><a class="pn-btn gold" href="#perfil">Crear cédula</a></div>`}
       <section class="pn-welcome">
-        ${flag('big')}
         <div class="pn-welcome-txt">
           <h2 class="${handle().length > 14 ? 'long' : ''}">Bienvenido,<br><em>${esc(handle())}</em></h2>
           <p>Selecciona una categoría para acceder a las herramientas</p>
@@ -173,7 +172,7 @@
           <a class="pn-stat" href="#banco"><span class="pn-stat-ico">${ico('bank')}</span><b>${S.account ? money(S.account.banco) : 'Sin cuenta'}</b><small>Saldo en banco</small><em>Ver banco ${ico('arrow')}</em></a>
         </div>
       </section>
-      <h3 class="pn-sec">${flag()}Categorías</h3>
+      <h3 class="pn-sec"><span>${ico('grid')}</span>Categorías</h3>
       <div class="pn-cats">
         ${cat('#perfil', 'green', 'user', 'Mi perfil', 'Cédula, banco, multas y antecedentes')}
         ${hasWork() ? cat('#trabajos', 'blue', 'power', 'Servicio Trabajos', S.jobs.length === 1 ? `Tu trabajo: ${jobInfo(S.jobs[0]).name}` : 'Inicia y termina tus turnos') : ''}
@@ -181,8 +180,8 @@
         ${cat('#tienda', 'purple', 'store', 'Carros y casas', 'Concesionario e inmobiliaria')}
         ${cat('#negro', 'dark', 'mask', 'Mercado negro', 'Se paga en efectivo')}
         ${cat('#justicia', 'cyan', 'scale', 'Justicia', 'Denuncias y juicios')}
-        ${S.staff?.mod ? cat('#admin', 'red', 'shield', 'Administración', S.staff.admin ? 'Stock, base de datos y casos' : 'Base de datos y casos') : ''}
-        ${cat('/#normativa', 'red', 'book', 'Normativa', 'Reglas del servidor')}
+        ${S.staff?.mod ? cat('#admin', 'rose', 'shield', 'Administración', S.staff.admin ? 'Stock, base de datos y casos' : 'Base de datos y casos') : ''}
+        ${cat('/#normativa', 'indigo', 'book', 'Normativa', 'Reglas del servidor')}
       </div>`;
   }
 

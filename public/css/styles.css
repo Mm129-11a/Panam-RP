@@ -435,3 +435,5 @@ body > header{border-top:0}
 body > header::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,#f5f7fc 0 25%,#d21f3c 25% 50%,#1f4fc2 50% 75%,#f5f7fc 75%)}
 footer{background:#050e24}
 header{background:rgba(7,20,48,.88)}
+/* tema a colores: franja de colores arriba */
+body > header::before{background:linear-gradient(90deg,#22d3ee,#6366f1,#a855f7,#ec4899,#f97316,#facc15)}
