@@ -277,20 +277,29 @@
     for (let i = 0; i < seed.length; i++) { h = Math.imul(h ^ seed.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
     return () => { h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
   }
-  // Cuadro tipo QR (decorativo: no se puede escanear)
-  function qrSvg(seed, n = 25) {
+  // Código 2D denso (decorativo: no se puede leer). Se guarda para no redibujarlo en cada actualización.
+  const codeCache = new Map();
+  function code2d(seed, n = 36) {
+    if (codeCache.has(seed)) return codeCache.get(seed);
     const rand = rng(seed);
-    const on = (x, y) => {
-      const finder = (fx, fy) => { const dx = x - fx; const dy = y - fy; if (dx < 0 || dy < 0 || dx > 6 || dy > 6) return null; return dx === 0 || dy === 0 || dx === 6 || dy === 6 || (dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4); };
-      for (const [fx, fy] of [[0, 0], [n - 7, 0], [0, n - 7]]) { const f = finder(fx, fy); if (f !== null) return f; }
-      if ((x <= 7 && y <= 7) || (x >= n - 8 && y <= 7) || (x <= 7 && y >= n - 8)) return false;
-      if (y === 6) return x % 2 === 0;
-      if (x === 6) return y % 2 === 0;
-      return rand() > 0.52;
-    };
-    let rects = '';
-    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (on(x, y)) rects += `<rect x="${x}" y="${y}" width="1.02" height="1.02"/>`;
-    return `<svg class="pn-qr" viewBox="-1 -1 ${n + 2} ${n + 2}" aria-hidden="true"><rect x="-1" y="-1" width="${n + 2}" height="${n + 2}" fill="#fff"/><g fill="#111">${rects}</g></svg>`;
+    let d = '';
+    for (let y = 0; y < n; y++) {
+      let run = -1;
+      for (let x = 0; x <= n; x++) {
+        let on = false;
+        if (x < n) {
+          if (x === 0 || y === n - 1) on = true; // borde en L
+          else if (y === 0) on = x % 2 === 0; // borde alterno arriba
+          else if (x === n - 1) on = y % 2 === 1; // borde alterno a la derecha
+          else on = rand() > 0.5;
+        }
+        if (on && run < 0) run = x;
+        if (!on && run >= 0) { d += `M${run} ${y}h${x - run}v1h-${x - run}z`; run = -1; }
+      }
+    }
+    const svg = `<svg class="pn-code2d" viewBox="-1 -1 ${n + 2} ${n + 2}" shape-rendering="crispEdges" aria-hidden="true"><path d="${d}"/></svg>`;
+    codeCache.set(seed, svg);
+    return svg;
   }
   // Líneas de lectura (formato de 3 líneas × 30, con dígitos de control)
   function mrz(c) {
@@ -308,41 +317,42 @@
     return [l1, l2, l3].map((l) => esc(l).replace(/</g, '&lt;')).join('<br>');
   }
 
+  // Ventanita de la esquina con el logo del server medio transparente
+  const idWindow = (side) => `<span class="pn-id-win ${side}"><img src="/img/logo.webp" alt=""></span>`;
+
   function idFront(c) {
     const born = isoDate(c.nacimiento);
     const exp = dayOf(c.created_at); exp.setUTCFullYear(exp.getUTCFullYear() + 10);
     return `<span class="pn-id pn-face-a">
-      <img class="pn-id-mark" src="/img/logo.webp" alt="">
-      <span class="pn-id-head"><span><b>PANAMÁ RP</b><small>DOCUMENTO DE IDENTIDAD</small></span><span class="pn-id-tag">DOCUMENTO DE ROL</span><span class="pn-holo"><img src="/img/logo.webp" alt=""></span></span>
-      <span class="pn-id-main">
-        <span class="pn-id-left">${avatar('id')}<span class="pn-id-emb"></span><b class="pn-id-num">${esc(c.cedula)}</b></span>
-        <span class="pn-id-right">
-          <span class="pn-id-fn">${esc(c.nombre)}</span>
-          <span class="pn-id-ln">${esc(c.apellidos)}</span>
-          <span class="pn-id-rows">
-            <span><small>NOMBRE USUAL:</small> ${esc(plain(c.nombre).split(' ')[0])}</span>
-            <span><small>FECHA DE NACIMIENTO:</small> ${born ? fechaId(born) : esc(c.nacimiento)}</span>
-            <span><small>LUGAR DE NACIMIENTO:</small> ${esc(LUGAR[c.nacionalidad] || 'EXTRANJERO')}</span>
-            <span><small>SEXO:</small> ${sexo(c.genero)} &nbsp; <small>TIPO DE SANGRE:</small> ${esc(c.sangre)}</span>
-            <span><small>EXPEDIDA:</small> ${fechaId(dayOf(c.created_at))} &nbsp; <small>EXPIRA:</small> ${fechaId(exp)}</span>
-          </span>
+      <span class="pn-id-title"><b>PANAMÁ RP</b><small>DOCUMENTO DE IDENTIDAD</small></span>
+      ${idWindow('a')}
+      ${avatar('id')}
+      <b class="pn-id-num">${esc(c.cedula)}</b>
+      <span class="pn-id-data">
+        <span class="pn-id-fn">${esc(c.nombre)}</span>
+        <span class="pn-id-ln">${esc(c.apellidos)}</span>
+        <span class="pn-id-rows">
+          <span><small>NOMBRE USUAL:</small> ${esc(plain(c.nombre).split(' ')[0])}</span>
+          <span><small>FECHA DE NACIMIENTO:</small> ${born ? fechaId(born) : esc(c.nacimiento)}</span>
+          <span><small>LUGAR DE NACIMIENTO:</small> ${esc(LUGAR[c.nacionalidad] || 'EXTRANJERO')}</span>
+          <span><small>SEXO:</small> ${sexo(c.genero)} &nbsp;&nbsp;<small>TIPO DE SANGRE:</small> ${esc(c.sangre)}</span>
+          <span><small>EXPEDIDA:</small> ${fechaId(dayOf(c.created_at))} &nbsp;&nbsp;<small>EXPIRA:</small> ${fechaId(exp)}</span>
         </span>
-        ${avatar('ghost')}
       </span>
-      <span class="pn-id-foot"><span class="pn-id-state">CIUDADANO</span><span class="pn-id-sign">${esc(c.nombre.split(' ')[0])} ${esc(c.apellidos.split(' ')[0])}</span></span>
+      <span class="pn-id-ghost">${avatar('ghost')}</span>
+      <span class="pn-id-sign">${esc(c.nombre.split(' ')[0].charAt(0))}. ${esc(c.apellidos.split(' ')[0])}</span>
+      <span class="pn-id-state">CIUDADANO</span>
     </span>`;
   }
 
   function idBack(c) {
     const serial = `${String(Math.floor(rng(c.cedula)() * 9e7) + 1e7)}`;
     return `<span class="pn-id pn-face-b">
-      <img class="pn-id-mark" src="/img/logo.webp" alt="">
-      <span class="pn-idb-top"><span class="pn-idb-serial">PRP${serial}</span><span class="pn-holo"><img src="/img/logo.webp" alt=""></span></span>
-      <span class="pn-idb-main">
-        <span class="pn-mrz">${mrz(c)}</span>
-        <span class="pn-qrs">${qrSvg(c.cedula + 'a')}${qrSvg(c.cedula + 'b')}</span>
-      </span>
-      <span class="pn-idb-foot"><small>Documento de rol de Panamá RP · sin validez real</small><span class="pn-idb-brand"><img src="/img/logo.webp" alt=""><b>PANAMÁ RP</b></span></span>
+      ${idWindow('b')}
+      <span class="pn-idb-serial">PRP${serial}</span>
+      <small class="pn-idb-note">Documento de rol de Panamá RP. Sin validez oficial.</small>
+      <span class="pn-codes">${code2d(`${c.cedula}a`)}${code2d(`${c.cedula}b`)}</span>
+      <span class="pn-mrz">${mrz(c)}</span>
     </span>`;
   }
 
