@@ -778,6 +778,37 @@ async function onGatewayInteraction(interaction) {
 }
 
 
+// Lee los mensajes que dejó el bot de antes en los canales (para copiar sus respuestas tal cual).
+async function scanOldBotMessages() {
+  const me = await bot.call('GET', '/users/@me');
+  const botId = me.ok ? me.data?.id : CLIENT_ID;
+  const ch = await bot.call('GET', `/guilds/${HOME_GUILD}/channels`);
+  if (!ch.ok || !Array.isArray(ch.data)) return console.log(`[viejo] no pude leer los canales (${ch.status})`);
+  const seen = new Set();
+  let count = 0;
+  for (const c of ch.data.filter((x) => x.type === 0 || x.type === 5)) {
+    await new Promise((r) => setTimeout(r, 400));
+    const r = await bot.call('GET', `/channels/${c.id}/messages?limit=100`);
+    if (!r.ok || !Array.isArray(r.data)) continue;
+    for (const m of r.data) {
+      if (m.author?.id !== botId) continue;
+      const cmd = m.interaction_metadata?.name || m.interaction?.name || '';
+      const key = `${cmd}|${(m.embeds?.[0]?.title || m.content || '').slice(0, 50)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const slim = {
+        canal: c.name, cmd, fecha: m.timestamp, content: (m.content || '').slice(0, 400),
+        embeds: (m.embeds || []).map((e) => ({ title: e.title, description: (e.description || '').slice(0, 700), color: e.color, url: e.url, author: e.author?.name, fields: (e.fields || []).map((f) => [f.name, (f.value || '').slice(0, 160), Boolean(f.inline)]), image: e.image?.url, thumbnail: e.thumbnail?.url, footer: e.footer?.text, timestamp: Boolean(e.timestamp) })),
+        components: (m.components || []).map((row) => (row.components || []).map((b) => ({ type: b.type, style: b.style, label: b.label, emoji: b.emoji?.name, custom_id: b.custom_id, url: b.url, placeholder: b.placeholder }))),
+        files: (m.attachments || []).map((a) => a.filename),
+      };
+      console.log(`[viejo] ${JSON.stringify(slim).slice(0, 3500)}`);
+      if (++count >= 120) return console.log('[viejo] (tope de 120 mensajes)');
+    }
+  }
+  console.log(`[viejo] mensajes del bot de antes encontrados: ${count}`);
+}
+
 // En modo gateway, la Interactions Endpoint URL tiene que estar vacía (si no, Discord no manda nada
 // por el gateway y el bot viejo se queda sin sus comandos). Solo se borra si es la de esta web.
 async function releaseInteractionsUrl() {
@@ -1046,7 +1077,11 @@ app.listen(PORT, () => {
     startGateway({
       token: BOT_TOKEN,
       onDispatch: (t, d) => {
-        if (t === 'READY' && !gatewayOnce) { gatewayOnce = true; releaseInteractionsUrl().catch((err) => console.error('[gateway]', err.message)); }
+        if (t === 'READY' && !gatewayOnce) {
+          gatewayOnce = true;
+          releaseInteractionsUrl().catch((err) => console.error('[gateway]', err.message));
+          setTimeout(() => scanOldBotMessages().catch((err) => console.error('[viejo]', err.message)), 15_000);
+        }
         if (t === 'INTERACTION_CREATE') onGatewayInteraction(d).catch((err) => console.error('[gateway]', err.message));
       },
     });
