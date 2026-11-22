@@ -163,7 +163,8 @@ test('trabajos según los roles de Discord (uno por rol, por ID)', () => {
   const ID = { pn: '1560736880872525836', aero: '1560736880872525835', sena: '1565913556535353444', att: '1560736880478130184', bomb: '1560736880872525834' };
   const roles = [{ id: ID.pn, name: 'Policía Nacional' }, { id: ID.aero, name: 'Aeronaval' }, { id: '4', name: 'Staff' }, { id: '5', name: 'Oficial de prensa' }, { id: '6', name: 'Paramédicos' }];
   assert.deepEqual(jobsFor([ID.aero], roles), ['aeronaval'], 'solo el rol que tiene');
-  assert.deepEqual(jobsFor([ID.pn, ID.sena, ID.att, ID.bomb], roles), ['policia', 'senafront', 'transito', 'bomberos']);
+  assert.deepEqual(jobsFor([ID.pn, ID.sena, ID.att, ID.bomb], roles), ['policia', 'senafront', 'transito', 'bomberos', 'mecanico']);
+  assert.deepEqual(jobsFor([ID.att], roles), ['transito', 'mecanico'], 'la ATT también es mecánico');
   assert.deepEqual(jobsFor(['4', '5', '6'], roles), [], 'sin rol de trabajo no hay trabajos (no se adivina por el nombre)');
   assert.deepEqual(jobsFor([], roles), []);
   const custom = configureJobs('bomberos=Staff;nada=algo');

@@ -414,7 +414,7 @@
   function viewTrabajos() {
     if (!hasWork()) {
       return `<section class="pn-gate"><div class="pn-gate-ico">${ico('briefcase')}</div><h1>Sin rol de trabajo</h1>
-        <p>Para entrar aquí necesitas en Discord el rol de algún trabajo: Policía Nacional, Aeronaval, Senafront, ATT o Bomberos.</p>
+        <p>Para entrar aquí necesitas en Discord el rol de algún trabajo: Policía Nacional, Aeronaval, Senafront, ATT (también mecánico) o Bomberos.</p>
         <div class="pn-gate-actions"><a class="pn-btn gold lg" href="#">Volver al inicio</a></div></section>`;
     }
     const on = S.shift;
