@@ -141,3 +141,34 @@ test('API de ER:LC: jugadores, estado y caché', async () => {
   const r = await handleCommand({ type: 2, guild_id: 'g', member: { user: { id: '1' }, roles: [] }, data: { name: 'servidor' } }, { db: null, jobs: [], JOBS, isCitizen: false, erlc: e, siteUrl: '' });
   assert.equal(r.public.embeds[0].fields[0].value, '12/40');
 });
+
+test('/crear-cedula usa el Roblox vinculado y sale igual en la web', async () => {
+  const db = await setup();
+  const opts = [
+    { name: 'nombre', type: 3, value: 'Ana' }, { name: 'apellidos', type: 3, value: 'Pérez Gómez' },
+    { name: 'nacimiento', type: 3, value: '10/03/1995' }, { name: 'sexo', type: 3, value: 'Femenino' },
+    { name: 'sangre', type: 3, value: 'O+' }, { name: 'nacionalidad', type: 3, value: 'Panameña' },
+  ];
+  let linked = null;
+  const extra = { robloxFor: async () => linked };
+  let r = await handleCommand(cmd(ANA, 'crear-cedula', opts), ctx(db, extra));
+  assert.match(r.private.content, /vincula tu cuenta de Roblox/);
+  assert.equal(await P.getCharacter(db, ANA.id), null);
+
+  linked = { id: 555, name: 'AnaRbx', verified: true };
+  r = await handleCommand(cmd(ANA, 'crear-cedula', opts), ctx(db, extra));
+  assert.match(r.private.content, /Cédula creada/);
+  assert.match(r.public.embeds[0].description, /sacó su cédula/);
+  const c = await P.getCharacter(db, ANA.id);
+  assert.equal(c.nacimiento, '1995-03-10');
+  assert.equal(c.roblox_name, 'AnaRbx');
+  assert.equal(Number(c.roblox_id), 555);
+  assert.ok(await P.getAccount(db, ANA.id), 'abre la cuenta del banco');
+
+  r = await handleCommand(cmd(ANA, 'crear-cedula', opts), ctx(db, extra));
+  assert.match(r.private.content, /Ya tienes cédula/);
+
+  const bad = opts.map((o) => (o.name === 'nacimiento' ? { ...o, value: '31/02/2030' } : o));
+  r = await handleCommand(cmd(POLI, 'crear-cedula', bad), ctx(db, extra));
+  assert.match(r.private.content, /^❌/);
+});

@@ -21,6 +21,7 @@ import { configureJobs, jobsFor, publicJobs, SHIFT } from './lib/jobs.js';
 import * as panel from './lib/panel.js';
 import { buildCommands, handleCommand, sameCommands } from './lib/commands.js';
 import { createErlc } from './lib/erlc.js';
+import { fetchRobloxProfile, hasCode, LINK_TTL, makeCode } from './lib/robloxlink.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -55,6 +56,8 @@ const JOBS = configureJobs(process.env.JOB_ROLES || '');
 // ER:LC: con la llave del servidor privado se ven los jugadores y se comprueba que estés dentro al iniciar turno
 const ERLC_KEY = (process.env.ERLC_API_KEY || '').trim();
 const ERLC_REQUIRE_INGAME = (process.env.ERLC_TURNO_EN_JUEGO || 'si').toLowerCase() !== 'no';
+// Vincular Roblox con un código en el perfil (ROBLOX_VINCULAR=no para solo comprobar que el usuario existe)
+const ROBLOX_LINK_REQUIRED = (process.env.ROBLOX_VINCULAR || 'si').toLowerCase() !== 'no';
 const HOME_GUILD = GUILD_ID || '1560736880478130178'; // servidor de Discord de Panamá RP
 // Puente a Discord (otro servicio en otra región) para cuando Discord bloquea la IP de Render.
 const RELAY_URL = /^https?:\/\/[\w.-]+(:\d+)?$/.test((process.env.RELAY_URL || '').replace(/\/$/, '')) ? process.env.RELAY_URL.replace(/\/$/, '') : '';
@@ -79,8 +82,8 @@ const ipOf = (req) => {
   return ip;
 };
 app.use(securityHeaders({ https: HTTPS }));
-const PANEL_POSTS = ['/roblox', '/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/policia/multa', '/policia/arresto'];
-app.use(methodGuard(['/logout', '/api/solicitud', '/api/discord/interactions', ...PANEL_POSTS.map((p) => `/api/panel${p}`)]));
+const PANEL_POSTS = ['/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/policia/multa', '/policia/arresto'];
+app.use(methodGuard(['/logout', '/api/solicitud', '/api/discord/interactions', '/api/roblox/vincular', '/api/roblox/comprobar', ...PANEL_POSTS.map((p) => `/api/panel${p}`)]));
 app.use(rateLimit({ windowMs: 60_000, max: 300, keyFn: ipOf }));
 
 const authLimit = rateLimit({
@@ -254,7 +257,8 @@ async function whitelistStatus(userId) {
 app.get('/api/me', apiLimit, noStore, async (req, res) => {
   const user = req.session?.user || null;
   const whitelist = user ? await whitelistStatus(user.id) : null;
-  res.json({ user, loginEnabled: loginConfigured(), submitted: recentlySubmitted(req), whitelist });
+  const linked = verifiedRoblox(req);
+  res.json({ user, loginEnabled: loginConfigured(), submitted: recentlySubmitted(req), whitelist, robloxLinkRequired: ROBLOX_LINK_REQUIRED, roblox: linked });
 });
 
 // ─── Solicitud de whitelist ───
@@ -310,6 +314,50 @@ app.get('/api/roblox', robloxLimit, noStore, async (req, res) => {
     console.error('[roblox]', err.message);
     res.status(502).json({ error: 'Roblox no respondió. Intenta de nuevo.' });
   }
+});
+
+// ─── Vincular Roblox (código en la descripción del perfil) ───
+const linkJson = express.json({ limit: '2kb' });
+const verifiedRoblox = (req) => {
+  const v = req.session?.rbxVerified;
+  return v && Date.now() - v.t < 7 * 24 * 60 * 60 * 1000 ? { id: v.id, name: v.name, avatar: v.avatar || null } : null;
+};
+function linkGuard(req, res) {
+  res.set('Cache-Control', 'no-store');
+  if (!isSameOrigin(req, ORIGIN)) { res.status(403).json({ error: 'Solicitud no permitida.' }); return false; }
+  if (!req.session?.user) { res.status(401).json({ error: 'Inicia sesión con Discord.' }); return false; }
+  return true;
+}
+
+app.post('/api/roblox/vincular', robloxLimit, linkJson, async (req, res) => {
+  if (!linkGuard(req, res)) return;
+  const name = typeof req.body?.usuario === 'string' ? req.body.usuario.trim() : '';
+  if (!ROBLOX_USER_RE.test(name)) return res.status(400).json({ error: 'Usa solo letras, números o _ (3 a 20 caracteres).' });
+  let user;
+  try { user = await lookupRoblox(name); } catch { return res.status(502).json({ error: 'Roblox no responde. Intenta en un momento.' }); }
+  if (!user) return res.status(404).json({ error: 'No existe ese usuario en Roblox.' });
+  const prev = req.session.rbxLink;
+  const code = prev && prev.id === String(user.id) && Date.now() - prev.t < LINK_TTL ? prev.code : makeCode();
+  req.session.rbxLink = { id: String(user.id), name: user.name, avatar: user.avatar || null, code, t: prev?.code === code ? prev.t : Date.now() };
+  res.json({ code, user });
+});
+
+app.post('/api/roblox/comprobar', robloxLimit, async (req, res) => {
+  if (!linkGuard(req, res)) return;
+  const link = req.session.rbxLink;
+  if (!link || Date.now() - link.t > LINK_TTL) return res.status(409).json({ error: 'El código venció. Pide uno nuevo.' });
+  let profile;
+  try { profile = await fetchRobloxProfile(link.id); } catch { return res.status(502).json({ error: 'Roblox no responde. Intenta en un momento.' }); }
+  if (!profile) return res.status(404).json({ error: 'Esa cuenta de Roblox ya no existe.' });
+  if (!hasCode(profile.description, link.code)) {
+    return res.status(409).json({ error: 'Todavía no vemos el código en tu descripción de Roblox. Guárdala y espera unos segundos.' });
+  }
+  const roblox = { id: link.id, name: profile.name || link.name, avatar: link.avatar };
+  req.session.rbxVerified = { ...roblox, t: Date.now() };
+  req.session.rbxLink = null;
+  const store = await getDb();
+  if (store) await panel.setRoblox(store, req.session.user, roblox, Date.now(), { verified: true }).catch((e) => console.error('[db] vincular:', e.message));
+  res.json({ ok: true, user: { ...roblox, displayName: profile.displayName } });
 });
 
 // Avatares para la sección de equipo (hasta 6 usuarios por consulta, con la misma caché)
@@ -442,10 +490,14 @@ app.post('/api/solicitud', submitLimit, noStore, express.json({ limit: '20kb' })
   try {
     const roblox = await lookupRoblox(data.roblox); // se vuelve a comprobar aquí: no se confía en el navegador
     if (!roblox) return res.status(400).json({ error: 'Revisa los campos marcados.', errors: { roblox: 'No existe ese usuario en Roblox.' } });
+    const linked = verifiedRoblox(req);
+    if (ROBLOX_LINK_REQUIRED && linked?.id !== String(roblox.id)) {
+      return res.status(400).json({ error: 'Vincula tu cuenta de Roblox antes de enviar.', errors: { roblox: 'Vincula tu cuenta de Roblox (paso 1).' } });
+    }
     const score = scoreApplication(data.respuestas);
     payload = buildWebhookPayload({ user, roblox, data, score });
     const store = await getDb();
-    if (store) await panel.saveApplication(store, { user, roblox, data, score }).catch((e) => console.error('[db] guardar solicitud:', e.message));
+    if (store) await panel.saveApplication(store, { user, roblox, data, score, verified: Boolean(linked) }).catch((e) => console.error('[db] guardar solicitud:', e.message));
     await sendApplication(payload, user.id);
     req.session.submittedAt = Date.now();
     res.json({ ok: true });
@@ -575,6 +627,7 @@ async function runCommand(interaction) {
         JOBS,
         isCitizen: wlRole ? roles.includes(wlRole) : true,
         robloxAvatar: async (name) => (name ? (await lookupRoblox(name).catch(() => null))?.avatar || null : null),
+        robloxFor: (id) => robloxFor(store, id),
         erlc,
         siteUrl: BASE_URL,
         verifyInGame,
@@ -731,7 +784,7 @@ app.get('/api/panel/estado', panelLimit, panelRoute(async ({ user, db: d, jobs }
   // Roblox: el de la cédula, el vinculado o el de la whitelist (con su foto)
   const rbxName = character?.roblox_name || linked?.name || solicitud?.roblox?.name || '';
   const rbx = rbxName ? await lookupRoblox(rbxName).catch(() => null) : null;
-  const roblox = rbxName ? { name: rbx?.name || rbxName, avatar: rbx?.avatar || null } : null;
+  const roblox = rbxName ? { name: rbx?.name || rbxName, avatar: rbx?.avatar || null, verified: Boolean(character || linked?.verified) } : null;
   if (Date.now() >= nextRefresh) refreshStats(); // contador de Discord (no se espera)
   return {
     now: Date.now(), user, modo: dbMode, character, account, shift, stats: week, fines, arrests, transactions, roblox,
@@ -740,27 +793,17 @@ app.get('/api/panel/estado', panelLimit, panelRoute(async ({ user, db: d, jobs }
   };
 }));
 
-// Vincular el usuario de Roblox (para la foto antes de tener cédula)
-post('/roblox', async ({ user, db: d }, req) => {
-  const name = typeof req.body?.usuario === 'string' ? req.body.usuario.trim() : '';
-  if (!ROBLOX_USER_RE.test(name)) throw new panel.PanelError(400, 'Usuario de Roblox inválido.', { usuario: 'Usa solo letras, números o _ (3 a 20).' });
-  const roblox = await lookupRoblox(name).catch(() => null);
-  if (!roblox) throw new panel.PanelError(400, 'No existe ese usuario en Roblox.', { usuario: 'No existe ese usuario en Roblox.' });
-  await panel.setRoblox(d, user, roblox);
-  return { roblox: { name: roblox.name, avatar: roblox.avatar } };
-});
+// La cédula usa la cuenta de Roblox vinculada (comprobada con el código en el perfil)
+async function robloxFor(d, userId) {
+  const linked = await panel.getUserRoblox(d, userId);
+  if (linked && (linked.verified || !ROBLOX_LINK_REQUIRED)) return linked;
+  if (!ROBLOX_LINK_REQUIRED) return (await panel.latestApplication(d, userId))?.roblox || null;
+  return null;
+}
 post('/cedula', async ({ user, db: d }, req) => {
-  const b = req.body || {};
-  let roblox = null;
-  const name = typeof b.roblox === 'string' ? b.roblox.trim() : '';
-  if (name) {
-    if (!ROBLOX_USER_RE.test(name)) throw new panel.PanelError(400, 'Revisa los campos marcados.', { roblox: 'Usuario de Roblox inválido.' });
-    roblox = await lookupRoblox(name).catch(() => null);
-    if (!roblox) throw new panel.PanelError(400, 'Revisa los campos marcados.', { roblox: 'No existe ese usuario en Roblox.' });
-  } else {
-    roblox = (await panel.latestApplication(d, user.id))?.roblox || null;
-  }
-  return { character: await panel.createCharacter(d, { user, roblox, input: b.personaje }) };
+  const roblox = await robloxFor(d, user.id);
+  if (!roblox) throw new panel.PanelError(400, 'Primero vincula tu cuenta de Roblox.', { roblox: 'Vincula tu cuenta de Roblox arriba.' });
+  return { character: await panel.createCharacter(d, { user, roblox, input: req.body?.personaje }) };
 });
 post('/banco/mover', async ({ user, db: d }, req) => ({ account: await panel.moveMoney(d, user.id, req.body?.tipo, req.body?.monto) }));
 post('/banco/transferir', async ({ user, db: d }, req) => panel.transfer(d, user.id, req.body?.cedula, req.body?.monto, req.body?.nota));

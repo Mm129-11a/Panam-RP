@@ -43,7 +43,7 @@
   const head = $('#pn-head');
   const main = $('#pn-main');
   let S = null;
-  const ui = { tab: 'info', work: 'historial', search: null, activity: null, busy: false, flip: false };
+  const ui = { tab: 'info', work: 'historial', search: null, activity: null, busy: false, flip: false, link: null };
 
   // ─── Utilidades ───
   let toastT = 0;
@@ -174,9 +174,9 @@
 
   function viewPerfil() {
     const has = Boolean(S.account);
-    const rbx = S.roblox?.name
-      ? `<small>Roblox: <b>${esc(S.roblox.name)}</b></small>`
-      : `<form class="pn-link" data-form="roblox" novalidate><input class="ap-input" name="usuario" maxlength="20" placeholder="Tu usuario de Roblox" autocomplete="off" aria-label="Tu usuario de Roblox"><button class="pn-btn gold sm" type="submit">Vincular</button><span class="pn-err" data-err="usuario"></span></form>`;
+    const rbx = S.roblox?.verified
+      ? `<small>Roblox: <b>${esc(S.roblox.name)}</b> <span class="pn-ok">✓ vinculado</span></small>`
+      : linkBox();
     const shorts = [
       ['multas', 'receipt', 'Multas', `${pending().length} pendiente(s)`, 'gold'],
       ['arrestos', 'gavel', 'Arrestos', `${S.arrests.length} registro(s)`, 'red'],
@@ -210,6 +210,21 @@
         </div>
         ${ui.tab === 'arrestos' ? tabArrestos() : ui.tab === 'multas' ? tabMultas() : S.character ? tabInfo() : cedulaForm()}
       </section>`;
+  }
+
+  // Vincular Roblox: código en la descripción del perfil de Roblox
+  function linkBox() {
+    const L = ui.link;
+    if (!L) {
+      return `<form class="pn-link" data-form="roblox" novalidate><input class="ap-input" name="usuario" maxlength="20" placeholder="Tu usuario de Roblox" autocomplete="off" aria-label="Tu usuario de Roblox" value="${esc(S.roblox?.name || '')}"><button class="pn-btn gold sm" type="submit">Vincular</button><span class="pn-err" data-err="usuario"></span></form>`;
+    }
+    return `<div class="pn-linkbox">
+        <small>Pega este código en la <b>descripción</b> de tu perfil de Roblox (<b>@${esc(L.user.name)}</b>), guárdala y toca Comprobar:</small>
+        <div class="pn-code"><code>${esc(L.code)}</code><button class="pn-btn ghost sm" type="button" data-act="copiar">Copiar</button></div>
+        <div class="pn-row"><a class="pn-btn ghost sm" href="https://www.roblox.com/users/${encodeURIComponent(L.user.id)}/profile" target="_blank" rel="noopener">Abrir mi perfil ↗</a>
+        <button class="pn-btn gold sm" type="button" data-act="comprobar">Comprobar</button>
+        <button class="pn-btn ghost sm" type="button" data-act="otro-usuario">Otro usuario</button></div>
+      </div>`;
   }
 
   const empty = (icon, text) => `<div class="pn-empty">${ico(icon)}<p>${text}</p></div>`;
@@ -246,32 +261,89 @@
       </div>`;
   }
 
-  function idFront(c) {
-    return `<span class="pn-id pn-face-a">
-      <span class="pn-id-top"><img src="/img/logo.webp" alt="" width="34" height="34"><span><b>PANAMÁ RP</b><small>Cédula de identidad · documento de rol</small></span></span>
-      <span class="pn-id-body">${avatar('id')}
-        <span class="pn-id-data">
-          <span><small>Nombre</small><b>${esc(c.nombre)}</b></span>
-          <span><small>Apellidos</small><b>${esc(c.apellidos)}</b></span>
-          <span><small>Nacimiento</small><b>${esc(isoBonito(c.nacimiento))}</b></span>
-          <span><small>Sexo</small><b>${esc(c.genero)}</b></span>
-          <span><small>Sangre</small><b>${esc(c.sangre)}</b></span>
-          <span><small>Nacionalidad</small><b>${esc(c.nacionalidad)}</b></span>
-        </span></span>
-      <span class="pn-id-foot"><span><small>N.º</small><b>${esc(c.cedula)}</b></span><span class="sign">${esc(c.nombre)} ${esc(c.apellidos.split(' ')[0])}</span></span>
-      <span class="pn-id-band"></span></span>`;
+  // ─── Cédula (diseño tipo cédula panameña, documento de rol) ───
+  const MES3 = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+  const fechaId = (d) => `${String(d.getUTCDate()).padStart(2, '0')}-${MES3[d.getUTCMonth()]}-${d.getUTCFullYear()}`;
+  // Día local (lo que ve la persona) guardado como fecha UTC, para que no salte de día
+  const dayOf = (ms) => { const d = new Date(ms); return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); };
+  const isoDate = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null; };
+  const LUGAR = { Panameña: 'PANAMÁ', Colombiana: 'COLOMBIA', Venezolana: 'VENEZUELA', Costarricense: 'COSTA RICA', Nicaragüense: 'NICARAGUA', Mexicana: 'MÉXICO', Estadounidense: 'EE. UU.', Española: 'ESPAÑA' };
+  const sexo = (g) => (g === 'Masculino' ? 'M' : g === 'Femenino' ? 'F' : 'X');
+  const plain = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+
+  // Números pseudoaleatorios fijos por cédula (el dibujo siempre sale igual)
+  function rng(seed) {
+    let h = 1779033703 ^ seed.length;
+    for (let i = 0; i < seed.length; i++) { h = Math.imul(h ^ seed.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+    return () => { h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
   }
-  function idBack(c) {
-    const code = (t) => esc(String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '<'));
-    return `<span class="pn-id pn-face-b">
-      <span class="pn-id-back-top"><b>PANAMÁ RP</b><small>Documento IC · sin validez real</small></span>
-      <span class="pn-id-seal"><img src="/img/logo.webp" alt="" width="64" height="64"></span>
-      <span class="pn-id-back-rows">
-        <span><small>Expedida</small><b>${fecha(c.created_at)}</b></span>
-        <span><small>Usuario de Roblox</small><b>${esc(c.roblox_name)}</b></span>
+  // Cuadro tipo QR (decorativo: no se puede escanear)
+  function qrSvg(seed, n = 25) {
+    const rand = rng(seed);
+    const on = (x, y) => {
+      const finder = (fx, fy) => { const dx = x - fx; const dy = y - fy; if (dx < 0 || dy < 0 || dx > 6 || dy > 6) return null; return dx === 0 || dy === 0 || dx === 6 || dy === 6 || (dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4); };
+      for (const [fx, fy] of [[0, 0], [n - 7, 0], [0, n - 7]]) { const f = finder(fx, fy); if (f !== null) return f; }
+      if ((x <= 7 && y <= 7) || (x >= n - 8 && y <= 7) || (x <= 7 && y >= n - 8)) return false;
+      if (y === 6) return x % 2 === 0;
+      if (x === 6) return y % 2 === 0;
+      return rand() > 0.52;
+    };
+    let rects = '';
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (on(x, y)) rects += `<rect x="${x}" y="${y}" width="1.02" height="1.02"/>`;
+    return `<svg class="pn-qr" viewBox="-1 -1 ${n + 2} ${n + 2}" aria-hidden="true"><rect x="-1" y="-1" width="${n + 2}" height="${n + 2}" fill="#fff"/><g fill="#111">${rects}</g></svg>`;
+  }
+  // Líneas de lectura (formato de 3 líneas × 30, con dígitos de control)
+  function mrz(c) {
+    const val = (ch) => (/\d/.test(ch) ? +ch : /[A-Z]/.test(ch) ? ch.charCodeAt(0) - 55 : 0);
+    const chk = (str) => String([...str].reduce((a, ch, i) => a + val(ch) * [7, 3, 1][i % 3], 0) % 10);
+    const pad = (str, n) => (str + '<'.repeat(n)).slice(0, n);
+    const yymmdd = (d) => `${String(d.getUTCFullYear()).slice(2)}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
+    const doc = pad(plain(c.cedula).replace(/[^A-Z0-9]/g, ''), 9);
+    const born = yymmdd(isoDate(c.nacimiento) || new Date(0));
+    const exp = dayOf(c.created_at); exp.setUTCFullYear(exp.getUTCFullYear() + 10);
+    const expS = yymmdd(exp);
+    const l1 = pad(`IDPRP${doc}${chk(doc)}`, 30);
+    const l2 = pad(`${born}${chk(born)}${sexo(c.genero)}${expS}${chk(expS)}PAN`, 29) + chk(born + expS);
+    const l3 = pad(`${plain(c.apellidos).replace(/[^A-Z]+/g, '<')}<<${plain(c.nombre).replace(/[^A-Z]+/g, '<')}`, 30);
+    return [l1, l2, l3].map((l) => esc(l).replace(/</g, '&lt;')).join('<br>');
+  }
+
+  function idFront(c) {
+    const born = isoDate(c.nacimiento);
+    const exp = dayOf(c.created_at); exp.setUTCFullYear(exp.getUTCFullYear() + 10);
+    return `<span class="pn-id pn-face-a">
+      <img class="pn-id-mark" src="/img/logo.webp" alt="">
+      <span class="pn-id-head"><span><b>PANAMÁ RP</b><small>DOCUMENTO DE IDENTIDAD</small></span><span class="pn-id-tag">DOCUMENTO DE ROL</span><span class="pn-holo"><img src="/img/logo.webp" alt=""></span></span>
+      <span class="pn-id-main">
+        <span class="pn-id-left">${avatar('id')}<span class="pn-id-emb"></span><b class="pn-id-num">${esc(c.cedula)}</b></span>
+        <span class="pn-id-right">
+          <span class="pn-id-fn">${esc(c.nombre)}</span>
+          <span class="pn-id-ln">${esc(c.apellidos)}</span>
+          <span class="pn-id-rows">
+            <span><small>NOMBRE USUAL:</small> ${esc(plain(c.nombre).split(' ')[0])}</span>
+            <span><small>FECHA DE NACIMIENTO:</small> ${born ? fechaId(born) : esc(c.nacimiento)}</span>
+            <span><small>LUGAR DE NACIMIENTO:</small> ${esc(LUGAR[c.nacionalidad] || 'EXTRANJERO')}</span>
+            <span><small>SEXO:</small> ${sexo(c.genero)} &nbsp; <small>TIPO DE SANGRE:</small> ${esc(c.sangre)}</span>
+            <span><small>EXPEDIDA:</small> ${fechaId(dayOf(c.created_at))} &nbsp; <small>EXPIRA:</small> ${fechaId(exp)}</span>
+          </span>
+        </span>
+        ${avatar('ghost')}
       </span>
-      <span class="pn-id-code">PRP&lt;${code(c.cedula)}&lt;&lt;${code(c.apellidos)}&lt;&lt;${code(c.nombre)}</span>
-      <span class="pn-id-band"></span></span>`;
+      <span class="pn-id-foot"><span class="pn-id-state">CIUDADANO</span><span class="pn-id-sign">${esc(c.nombre.split(' ')[0])} ${esc(c.apellidos.split(' ')[0])}</span></span>
+    </span>`;
+  }
+
+  function idBack(c) {
+    const serial = `${String(Math.floor(rng(c.cedula)() * 9e7) + 1e7)}`;
+    return `<span class="pn-id pn-face-b">
+      <img class="pn-id-mark" src="/img/logo.webp" alt="">
+      <span class="pn-idb-top"><span class="pn-idb-serial">PRP${serial}</span><span class="pn-holo"><img src="/img/logo.webp" alt=""></span></span>
+      <span class="pn-idb-main">
+        <span class="pn-mrz">${mrz(c)}</span>
+        <span class="pn-qrs">${qrSvg(c.cedula + 'a')}${qrSvg(c.cedula + 'b')}</span>
+      </span>
+      <span class="pn-idb-foot"><small>Documento de rol de Panamá RP · sin validez real</small><span class="pn-idb-brand"><img src="/img/logo.webp" alt=""><b>PANAMÁ RP</b></span></span>
+    </span>`;
   }
 
   function cedulaForm() {
@@ -289,8 +361,9 @@
           ${field('sangre', 'Tipo de sangre', select('sangre', o.sangre, p.sangre))}
           ${field('nacionalidad', 'Nacionalidad', select('nacionalidad', o.nacionalidad, p.nacionalidad))}
         </div>
-        ${field('roblox', 'Usuario de Roblox', `<input class="ap-input" id="f-roblox" name="roblox" maxlength="20" autocomplete="off" value="${esc(S.roblox?.name || '')}" required>`)}
-        <button class="pn-btn gold lg" type="submit">Crear mi cédula</button>
+        <p class="pn-muted small">${S.roblox?.verified ? `Roblox: <b>${esc(S.roblox.name)}</b> ✓ (sale tu avatar en la foto)` : '⚠️ Primero vincula tu cuenta de Roblox arriba (junto a tu nombre).'}</p>
+        <div class="pn-err" data-err="roblox"></div>
+        <button class="pn-btn gold lg" type="submit" ${S.roblox?.verified ? '' : 'disabled'}>Crear mi cédula</button>
       </form></div>`;
   }
 
@@ -515,11 +588,11 @@
     const kind = form.dataset.form;
     run(form, async () => {
       if (kind === 'roblox') {
-        const r = await api('/api/panel/roblox', { usuario: f.usuario });
-        toast(`Roblox vinculado: ${r.roblox.name}`);
-        await refresh();
+        const r = await api('/api/roblox/vincular', { usuario: f.usuario });
+        ui.link = { code: r.code, user: r.user };
+        render();
       } else if (kind === 'cedula') {
-        const r = await api('/api/panel/cedula', { roblox: f.roblox, personaje: { nombre: f.nombre, apellidos: f.apellidos, nacimiento: f.nacimiento, genero: f.genero, sangre: f.sangre, nacionalidad: f.nacionalidad } });
+        const r = await api('/api/panel/cedula', { personaje: { nombre: f.nombre, apellidos: f.apellidos, nacimiento: f.nacimiento, genero: f.genero, sangre: f.sangre, nacionalidad: f.nacionalidad } });
         toast(`¡Listo! Tu cédula es ${r.character.cedula}`);
         ui.tab = 'info';
         await refresh();
@@ -562,6 +635,8 @@
     if (act === 'modal') return openModal(b.dataset.m);
     if (act === 'tab') { ui.tab = b.dataset.tab; render(); if (b.classList.contains('pn-short')) $('#pn-exp')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     if (act === 'work') { ui.work = b.dataset.tab; render(); return; }
+    if (act === 'copiar') { navigator.clipboard?.writeText(ui.link?.code || '').then(() => toast('Código copiado'), () => toast('Mantén presionado el código para copiarlo')); return; }
+    if (act === 'otro-usuario') { ui.link = null; render(); return; }
     if (act === 'girar') { ui.flip = !ui.flip; b.classList.toggle('flip', ui.flip); return; }
     if (act === 'usar') {
       const form = $(`form[data-form="${b.dataset.to}"]`);
@@ -582,6 +657,11 @@
       } else if (act === 'terminar') {
         const r = (await api('/api/panel/turno/terminar', {})).result;
         toast(r.tooShort ? `Turno de ${r.minutes} min: muy corto para cobrar.` : `Turno de ${hm(r.minutes)} · cobraste ${money(r.paid)}${r.capped ? ' (tope de 4 h)' : ''}`);
+        await refresh();
+      } else if (act === 'comprobar') {
+        const r = await api('/api/roblox/comprobar', {});
+        ui.link = null;
+        toast(`¡Roblox vinculado: ${r.user.name}!`);
         await refresh();
       } else if (act === 'pagar') {
         await api('/api/panel/multas/pagar', { id: Number(b.dataset.id) });

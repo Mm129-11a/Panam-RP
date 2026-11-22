@@ -105,6 +105,12 @@ a.pn-stat:hover{border-color:#3a4358;transform:translateY(-2px)}
 .pn-link{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
 .pn-link .ap-input{width:210px;padding:9px 12px;font-size:14px}
 .pn-link .pn-err{flex-basis:100%;margin:0}
+.pn-ok{color:#86efac;font-weight:700;font-size:12px}
+.pn-linkbox{margin-top:8px;padding:12px 14px;border-radius:14px;border:1px dashed rgba(245,185,66,.5);background:rgba(245,185,66,.06);max-width:440px}
+.pn-linkbox small{display:block;color:#d6dbe7;font-size:13px;line-height:1.5;margin-bottom:10px}
+.pn-code{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.pn-code code{flex:1;min-width:0;padding:10px 12px;border-radius:10px;background:#0b0e13;border:1px solid var(--p-line);font:700 15px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;user-select:all;-webkit-user-select:all}
+.pn-muted.small{font-size:13px}
 .pn-prof-money{display:flex;flex-direction:column;gap:12px;flex-shrink:0}
 .pn-coins{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:10px}
 .pn-coin{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:14px;border:1px solid var(--p-line);background:var(--p-card)}
@@ -170,37 +176,60 @@ a.pn-stat:hover{border-color:#3a4358;transform:translateY(-2px)}
 .pn-dl dd{margin:0;font-weight:700;font-size:14px;text-align:right}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em}
 
-/* Cédula (gira): todo se mide en % del ancho de la tarjeta, así se ve igual en teléfono */
-.pn-card3d{display:block;width:100%;max-width:460px;margin:0 auto;padding:0;border:0;background:none;cursor:pointer;perspective:1400px;text-align:left;color:inherit;font:inherit;container-type:inline-size}
+/* Cédula (gira). Todo se mide en % del ancho de la tarjeta (cqw), así se ve igual en teléfono. */
+.pn-card3d{display:block;width:100%;max-width:480px;margin:0 auto;padding:0;border:0;background:none;cursor:pointer;perspective:1400px;text-align:left;color:inherit;font:inherit;container-type:inline-size}
 .pn-card3d-in{position:relative;display:block;aspect-ratio:1.586;transition:transform .7s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}
 .pn-card3d.flip .pn-card3d-in{transform:rotateY(180deg)}
-.pn-id{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;border-radius:3.5cqw;padding:3cqw 3.5cqw 0;color:#0e1a33;backface-visibility:hidden;-webkit-backface-visibility:hidden;background:linear-gradient(135deg,#f6f8fd 0%,#e6ecf8 55%,#d6e0f3 100%);box-shadow:0 22px 44px -22px rgba(0,0,0,.85),inset 0 0 0 1px rgba(255,255,255,.7)}
-.pn-id::before{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(115deg,transparent 0 18px,rgba(36,83,214,.05) 18px 19px),radial-gradient(circle at 85% 70%,rgba(224,38,47,.10),transparent 45%)}
+.pn-id{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;border-radius:3.4cqw;padding:3cqw 3.4cqw 2.4cqw;color:#1b1f3b;backface-visibility:hidden;-webkit-backface-visibility:hidden;font-family:'Inter',sans-serif;box-shadow:0 22px 44px -22px rgba(0,0,0,.85),inset 0 0 0 1px rgba(255,255,255,.55)}
 .pn-id.pn-face-b{transform:rotateY(180deg)}
-.pn-id-top{position:relative;display:flex;align-items:center;gap:2.2cqw;padding-bottom:2cqw;border-bottom:2px solid rgba(14,26,51,.12)}
-.pn-id-top img{width:7.4cqw;height:7.4cqw}
-.pn-id-top b{display:block;font:900 italic 3.7cqw/1.1 var(--display);letter-spacing:.04em}
-.pn-id-top small{display:block;color:#4a5a7c;font-size:2.05cqw;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
-.pn-id-body{position:relative;display:flex;gap:3cqw;padding:2.2cqw 0;flex:1;min-height:0}
-.pn-id .pn-ava.id{width:21cqw;height:26cqw;border-radius:2.2cqw}
-.pn-id .pn-ava.id > span{font-size:10cqw}
-.pn-id-data{display:grid;grid-template-columns:1fr 1fr;gap:1.1cqw 2.6cqw;align-content:start;flex:1;min-width:0}
-.pn-id-data small{display:block;font-size:1.85cqw;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#5b6b8f}
-.pn-id-data b{display:block;font-size:2.75cqw;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pn-id-foot{position:relative;display:flex;justify-content:space-between;align-items:flex-end;padding:1.3cqw 0 2cqw;border-top:1px dashed rgba(14,26,51,.25)}
-.pn-id-foot small{display:block;font-size:1.85cqw;font-weight:800;letter-spacing:.12em;color:#5b6b8f}
-.pn-id-foot b{font:800 3.7cqw ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.06em;color:#b3141c}
-.pn-id-foot .sign{font:italic 600 3.5cqw 'Brush Script MT','Segoe Script',cursive;color:#253b73;opacity:.85;white-space:nowrap}
-.pn-id-band{display:block;flex-shrink:0;height:1.8cqw;margin:0 -3.5cqw;background:linear-gradient(90deg,#2453d6 0 33%,#f6f8fd 33% 66%,#e0262f 66%)}
-.pn-id-back-top{position:relative;display:flex;justify-content:space-between;align-items:baseline;gap:3cqw;padding-bottom:1.8cqw;border-bottom:2px solid rgba(14,26,51,.12)}
-.pn-id-back-top b{font:900 italic 3.5cqw var(--display)}
-.pn-id-back-top small{color:#4a5a7c;font-size:2.05cqw;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
-.pn-id-seal{position:absolute;right:4cqw;top:10cqw;opacity:.22}
-.pn-id-seal img{width:14cqw;height:14cqw}
-.pn-id-back-rows{position:relative;display:flex;flex-direction:column;gap:1.3cqw;padding:2.6cqw 0;flex:1;min-height:0}
-.pn-id-back-rows small{display:block;font-size:1.85cqw;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#5b6b8f}
-.pn-id-back-rows b{font-size:2.9cqw}
-.pn-id-code{position:relative;display:block;flex-shrink:0;padding:1.8cqw 2.2cqw;margin-bottom:2cqw;border-radius:1.3cqw;background:rgba(14,26,51,.06);font:600 2.35cqw/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em;color:#22314f;word-break:break-all}
+/* Marca de agua: logo de Panamá RP medio transparente */
+.pn-id-mark{position:absolute;width:52cqw;height:52cqw;right:9cqw;top:50%;transform:translateY(-46%);opacity:.13;pointer-events:none;filter:saturate(.6)}
+.pn-face-b .pn-id-mark{left:24cqw;right:auto;opacity:.09}
+
+/* Frente: rosado/durazno con fondo de líneas finas */
+.pn-face-a{background:
+  repeating-radial-gradient(circle at 78% 30%,rgba(255,255,255,0) 0 1.1cqw,rgba(196,90,110,.10) 1.1cqw 1.25cqw),
+  repeating-linear-gradient(32deg,rgba(255,255,255,0) 0 2.2cqw,rgba(120,90,160,.07) 2.2cqw 2.35cqw),
+  linear-gradient(120deg,#f7cdd3 0%,#f6d6cf 38%,#f3e0cc 70%,#f1d2c6 100%)}
+.pn-id-head{position:relative;display:flex;align-items:flex-start;gap:2.4cqw}
+.pn-id-head > span:first-child{flex:1}
+.pn-id-head b{display:block;font:800 4.4cqw/1 'Saira',sans-serif;letter-spacing:.04em;color:#2b3f8f}
+.pn-id-head small{display:block;margin-top:.6cqw;font-size:2.3cqw;font-weight:800;letter-spacing:.08em;color:#2b3f8f}
+.pn-id-tag{margin-top:.4cqw;font-size:1.9cqw;font-weight:800;letter-spacing:.14em;color:#6b5873}
+.pn-holo{display:grid;place-items:center;width:9.5cqw;height:9.5cqw;flex-shrink:0;border-radius:1.6cqw;background:linear-gradient(135deg,#e9f3ff,#f9e2ff 30%,#dff8ef 55%,#fff3d6 80%,#e3e9ff);box-shadow:inset 0 0 0 .3cqw rgba(255,255,255,.7),0 .3cqw .8cqw rgba(0,0,0,.12);opacity:.92}
+.pn-holo img{width:70%;height:70%;opacity:.55;mix-blend-mode:multiply}
+.pn-id-main{position:relative;display:flex;gap:3cqw;flex:1;min-height:0;margin-top:1.6cqw}
+.pn-id-left{position:relative;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-end;flex-shrink:0}
+.pn-id .pn-ava.id{width:22cqw;height:27cqw;border-radius:1.2cqw;background:linear-gradient(180deg,#e6eaf3,#c9cfe0);border:.3cqw solid rgba(255,255,255,.75);box-shadow:0 .4cqw 1cqw rgba(0,0,0,.18)}
+.pn-id .pn-ava.id > span{font-size:10cqw;color:#55628a}
+.pn-id-emb{position:absolute;left:-1.2cqw;top:auto;bottom:30cqw;width:5cqw;height:5cqw;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffd36b,#e58a12);box-shadow:0 0 0 .4cqw rgba(255,255,255,.6)}
+.pn-id-num{display:block;margin-top:1.4cqw;font:800 5.6cqw/1 'Saira',sans-serif;letter-spacing:.03em;color:#111}
+.pn-id-right{position:relative;display:flex;flex-direction:column;min-width:0;flex:1;padding-top:.4cqw}
+.pn-id-fn{font-size:3.3cqw;font-weight:700;color:#23263f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pn-id-ln{font-size:4.6cqw;font-weight:800;color:#15172b;line-height:1.1;margin-bottom:1.4cqw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pn-id-rows{display:flex;flex-direction:column;gap:.55cqw;font-size:2.35cqw;font-weight:700;color:#2a2d45;white-space:nowrap}
+.pn-id-rows small{font-size:1.75cqw;font-weight:700;letter-spacing:.06em;color:#5b5f80}
+.pn-id .pn-ava.ghost{position:absolute;right:1cqw;bottom:2cqw;width:9cqw;height:11cqw;border-radius:.8cqw;opacity:.32;filter:grayscale(1) contrast(.9);background:transparent;border:0;box-shadow:none}
+.pn-id .pn-ava.ghost > span{font-size:4cqw;color:#7a6070}
+.pn-id-foot{position:relative;display:flex;justify-content:space-between;align-items:flex-end;margin-top:.8cqw}
+.pn-id-state{font-size:2cqw;font-weight:800;letter-spacing:.12em;color:#4a3d55}
+.pn-id-sign{margin-right:12cqw;font:italic 600 4.4cqw 'Brush Script MT','Segoe Script','Snell Roundhand',cursive;color:#1c2558;opacity:.85;white-space:nowrap;transform:rotate(-4deg)}
+
+/* Reverso: blanco, líneas de lectura y cuadros tipo QR */
+.pn-face-b{background:
+  repeating-linear-gradient(28deg,rgba(255,255,255,0) 0 2.4cqw,rgba(90,110,160,.06) 2.4cqw 2.55cqw),
+  linear-gradient(135deg,#fbfbfd,#eef0f5 60%,#e6e8ef)}
+.pn-idb-top{position:relative;display:flex;justify-content:space-between;align-items:flex-start}
+.pn-idb-serial{font:700 2.6cqw ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em;color:#3a3f55}
+.pn-idb-main{position:relative;display:flex;gap:3cqw;align-items:center;flex:1;min-height:0}
+.pn-mrz{flex:1;min-width:0;font:600 2.75cqw/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.09em;color:#1a1d2b;white-space:nowrap;overflow:hidden}
+.pn-qrs{display:flex;flex-direction:column;gap:1.6cqw;flex-shrink:0}
+.pn-qr{display:block;width:17cqw;height:17cqw;border-radius:.6cqw;box-shadow:0 0 0 .25cqw rgba(0,0,0,.06)}
+.pn-idb-foot{position:relative;display:flex;justify-content:space-between;align-items:flex-end;gap:2cqw}
+.pn-idb-foot small{font-size:1.8cqw;font-weight:700;letter-spacing:.06em;color:#6b7085}
+.pn-idb-brand{display:flex;align-items:center;gap:1.2cqw;flex-shrink:0}
+.pn-idb-brand img{width:6cqw;height:6cqw}
+.pn-idb-brand b{font:800 italic 2.8cqw 'Saira',sans-serif;color:#2b3f8f}
 
 /* Listas */
 .pn-list{list-style:none;margin:0;padding:0}

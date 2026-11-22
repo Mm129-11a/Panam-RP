@@ -61,6 +61,7 @@
     if (i === 0) {
       if (!ROBLOX_RE.test(clean(d.roblox))) e.roblox = 'Usa solo letras, números o _ (3 a 20 caracteres).';
       else if (!d.robloxUser || d.robloxUser.name.toLowerCase() !== clean(d.roblox).toLowerCase()) e.roblox = 'Toca "Verificar" para confirmar tu usuario.';
+      else if (needsLink() && !isLinked()) e.roblox = 'Vincula tu cuenta de Roblox con el código (abajo).';
     }
     if (i === 1) {
       const p = d.personaje;
@@ -120,15 +121,60 @@
         ${err('roblox')}
       </div>`;
   }
+  // ─── Vincular la cuenta de Roblox (código en la descripción del perfil) ───
+  const needsLink = () => Boolean(S.me && S.me.user && S.me.robloxLinkRequired);
+  const isLinked = () => Boolean(S.me && S.me.roblox && S.d.robloxUser && String(S.me.roblox.id) === String(S.d.robloxUser.id));
+  let linkCode = '';
+
+  function linkHtml() {
+    const r = S.d.robloxUser;
+    if (!needsLink() || !r) return '';
+    if (isLinked()) {
+      return `<div class="ap-link ok"><b>✓ Cuenta de Roblox vinculada</b><span>Ya puedes borrar el código de tu descripción si quieres.</span></div>`;
+    }
+    const profile = `https://www.roblox.com/users/${encodeURIComponent(r.id)}/profile`;
+    return `<div class="ap-link">
+        <b>Vincula tu cuenta para confirmar que es tuya</b>
+        <ol>
+          <li>Toca <b>Obtener código</b>.</li>
+          <li>Pega el código en la <b>descripción ("Acerca de")</b> de tu perfil de Roblox y guárdala. <a href="${profile}" target="_blank" rel="noopener">Abrir mi perfil ↗</a></li>
+          <li>Vuelve aquí y toca <b>Comprobar</b>.</li>
+        </ol>
+        ${linkCode ? `<div class="ap-code"><code id="link-code">${esc(linkCode)}</code><button type="button" class="btn ghost" id="btn-copy">Copiar</button></div>` : ''}
+        <div class="ap-link-btns">
+          <button type="button" class="btn ${linkCode ? 'ghost' : ''}" id="btn-code">${linkCode ? 'Otro código' : 'Obtener código'}</button>
+          ${linkCode ? '<button type="button" class="btn" id="btn-check">Comprobar</button>' : ''}
+        </div>
+      </div>`;
+  }
+
+  async function linkAction(kind) {
+    const btn = $(kind === 'code' ? '#btn-code' : '#btn-check');
+    if (btn) { btn.disabled = true; btn.textContent = kind === 'code' ? 'Pidiendo…' : 'Comprobando…'; }
+    try {
+      const r = await fetch(kind === 'code' ? '/api/roblox/vincular' : '/api/roblox/comprobar', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(kind === 'code' ? { usuario: S.d.robloxUser.name } : {}),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'No se pudo. Intenta de nuevo.');
+      if (kind === 'code') { linkCode = j.code; showErrors({}); }
+      else { S.me.roblox = j.user; linkCode = ''; showErrors({}); toast('¡Cuenta de Roblox vinculada!'); }
+    } catch (err) {
+      showErrors({ roblox: err.message });
+    }
+    $('#roblox-found').innerHTML = foundHtml();
+  }
+
   function foundHtml() {
     const r = S.d.robloxUser;
     if (!r || r.name.toLowerCase() !== clean(S.d.roblox).toLowerCase()) return '';
     const pic = r.avatar ? `<img src="${esc(r.avatar)}" alt="Avatar de ${esc(r.name)}" data-rbx-img />` : '';
     return `<div class="ap-rbx">
         <div class="ap-rbx-pic"><span class="ph">${esc(r.name.charAt(0).toUpperCase())}</span>${pic}</div>
-        <div class="ap-rbx-info"><small>ROBLOX · VERIFICADO</small><b>${esc(r.displayName)}</b><span>@${esc(r.name)} · ID ${esc(r.id)}</span></div>
+        <div class="ap-rbx-info"><small>ROBLOX · ${needsLink() ? (isLinked() ? 'VINCULADO' : 'ENCONTRADO') : 'VERIFICADO'}</small><b>${esc(r.displayName)}</b><span>@${esc(r.name)} · ID ${esc(r.id)}</span></div>
         <span class="ap-rbx-ok" aria-label="Verificado">✓</span>
-      </div>`;
+      </div>${linkHtml()}`;
   }
 
   function selectField(k, label) {
@@ -290,6 +336,11 @@
       return;
     }
     if (e.target.closest('#btn-verify')) verifyRoblox(false);
+    if (e.target.closest('#btn-code')) linkAction('code');
+    if (e.target.closest('#btn-check')) linkAction('check');
+    if (e.target.closest('#btn-copy')) {
+      navigator.clipboard?.writeText(linkCode).then(() => toast('Código copiado'), () => toast('Mantén presionado el código para copiarlo'));
+    }
   });
 
   let lookupSeq = 0;
@@ -308,6 +359,7 @@
       // Si mientras tanto escribiste otro usuario o cambiaste de paso, esta respuesta ya no sirve
       if (seq !== lookupSeq || !document.body.contains(input) || clean(input.value).toLowerCase() !== u.toLowerCase()) return;
       if (r.ok && j.user) {
+        if (!S.d.robloxUser || String(S.d.robloxUser.id) !== String(j.user.id)) linkCode = '';
         S.d.roblox = j.user.name; S.d.robloxUser = j.user;
         if (input.value !== j.user.name) input.value = j.user.name;
         $('#roblox-found').innerHTML = foundHtml();

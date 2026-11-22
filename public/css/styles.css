@@ -351,6 +351,16 @@ textarea.ap-input{min-height:112px;resize:vertical;line-height:1.5}
 .ap-rbx-info b{display:block;font-size:19px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ap-rbx-info span{color:var(--muted);font-size:14px}
 .ap-rbx-ok{display:grid;place-items:center;width:32px;height:32px;flex-shrink:0;border-radius:50%;background:#22c55e;color:#04210f;font-weight:900}
+.ap-link{margin-top:12px;padding:16px 18px;border-radius:16px;border:1px dashed rgba(122,162,255,.55);background:rgba(36,83,214,.08)}
+.ap-link > b{display:block;font-size:15px;margin-bottom:8px}
+.ap-link ol{margin:0 0 12px;padding-left:20px;color:#c3cadc;font-size:14px;line-height:1.7}
+.ap-link a{color:var(--accent);font-weight:600;white-space:nowrap}
+.ap-link.ok{border-style:solid;border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.08)}
+.ap-link.ok b{color:#86efac;margin-bottom:2px}
+.ap-link.ok span{color:var(--muted);font-size:13px}
+.ap-code{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.ap-code code{flex:1;min-width:0;padding:12px 14px;border-radius:12px;background:#0b1122;border:1px solid var(--line);font:700 17px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;color:#fff;user-select:all;-webkit-user-select:all}
+.ap-link-btns{display:flex;gap:10px;flex-wrap:wrap}
 @keyframes rbxIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.ap-rbx{animation:none}}
 .ap-count{display:block;text-align:right;font-size:13px;color:var(--muted);margin-top:6px}

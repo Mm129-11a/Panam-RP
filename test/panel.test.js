@@ -183,5 +183,23 @@ test('historial de turnos, ranking y Roblox vinculado', async () => {
   assert.equal(rank[0]._id, POLI.id);
   assert.equal(await P.getUserRoblox(db, BETO.id), null);
   await P.setRoblox(db, BETO, { id: 55, name: 'Beto_RBX' });
-  assert.deepEqual(await P.getUserRoblox(db, BETO.id), { id: '55', name: 'Beto_RBX' });
+  assert.deepEqual(await P.getUserRoblox(db, BETO.id), { id: '55', name: 'Beto_RBX', verified: false, verifiedAt: null });
+  await P.setRoblox(db, BETO, { id: 55, name: 'Beto_RBX' }, NOW, { verified: true });
+  assert.equal((await P.getUserRoblox(db, BETO.id)).verified, true);
+  await P.setRoblox(db, BETO, { id: 55, name: 'Beto_RBX' }, NOW + 1);
+  assert.equal((await P.getUserRoblox(db, BETO.id)).verified, true, 'la misma cuenta sigue verificada');
+  await P.setRoblox(db, BETO, { id: 66, name: 'Otra' }, NOW + 2);
+  assert.equal((await P.getUserRoblox(db, BETO.id)).verified, false, 'otra cuenta no hereda la verificación');
+});
+
+test('vincular Roblox: código en la descripción', async () => {
+  const { makeCode, hasCode } = await import('../lib/robloxlink.js');
+  let i = 0;
+  const code = makeCode(() => [3, 10, 21][i++ % 3]);
+  assert.equal(code, 'PRP LUZ COCO CORAL');
+  assert.equal(hasCode('Hola! prp-luz-coco-coral 🌴 juego Panamá RP', code), true);
+  assert.equal(hasCode('PRP  LUZ\nCOCO   CORAL', code), true);
+  assert.equal(hasCode('PRP LUZ COCO', code), false);
+  assert.equal(hasCode('XPRP LUZ COCO CORALES', code), false, 'no vale como parte de otra palabra');
+  assert.equal(hasCode('', code), false);
 });

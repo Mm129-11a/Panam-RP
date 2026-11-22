@@ -19,6 +19,7 @@ Web del servidor Panamá RP (ER:LC) con inicio de sesión de Discord y contadore
 | `DATABASE_URL` | Base de datos Postgres (Neon). Sin ella el panel funciona en modo de prueba |
 | `ERLC_API_KEY` | *(opcional)* llave del servidor privado de ER:LC (ajustes del servidor → API key) |
 | `ERLC_TURNO_EN_JUEGO` | *(opcional)* `no` para dejar iniciar turno sin estar dentro del servidor de ER:LC |
+| `ROBLOX_VINCULAR` | *(opcional)* `no` para no pedir el código en la descripción de Roblox (por defecto se pide) |
 | `JOB_ROLES` | *(opcional)* nombres de los roles de trabajo, ej. `policia=Policía Nacional;ems=Paramédicos` |
 | `NODE_VERSION` | `24` |
 | `NODE_ENV` | `production` |
@@ -72,5 +73,5 @@ Render gratis comparte su IP con muchos servicios y Discord a veces la bloquea h
 ## Comandos del bot
 
 El mismo bot de la whitelist tiene comandos de barra que usan la misma base de datos que el panel:
-`/cedula`, `/banco`, `/depositar`, `/retirar`, `/transferir`, `/multas`, `/pagar`, `/turno iniciar|terminar|estado`,
+`/crear-cedula`, `/cedula`, `/banco`, `/depositar`, `/retirar`, `/transferir`, `/multas`, `/pagar`, `/turno iniciar|terminar|estado`,
 `/multar`, `/arrestar`, `/antecedentes` (Policía en turno) y `/servidor` (ER:LC). Se registran solos al arrancar.
