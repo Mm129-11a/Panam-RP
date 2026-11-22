@@ -1060,7 +1060,15 @@ app.get('/api/panel/admin/ficha', panelLimit, panelRoute(async ({ user, db: d, s
 }));
 app.get('/api/panel/admin/casos', panelLimit, panelRoute(async ({ db: d, staff }) => {
   needMod(staff);
-  return { cases: await d.query('SELECT id, origen, tipo, estado, acusado, denunciante, autor_id, juez_id, fiscal_id, abogado_id, motivo, created_at FROM cases ORDER BY id DESC LIMIT 50', []) };
+  // nombre de cada quien: su personaje (cédula) o su nombre de Discord
+  const who = (col) => `(SELECT COALESCE((SELECT ch.nombre || ' ' || ch.apellidos FROM characters ch WHERE ch.discord_id = c.${col}), (SELECT u.discord_name FROM users u WHERE u.discord_id = c.${col}), c.${col}))`;
+  return {
+    cases: await d.query(
+      `SELECT c.id, c.origen, c.tipo, c.estado, c.acusado, c.denunciante, c.motivo, c.created_at, c.updated_at,
+         c.juez_id, c.fiscal_id, c.abogado_id, ${who('juez_id')} AS juez, ${who('fiscal_id')} AS fiscal, ${who('abogado_id')} AS abogado
+       FROM cases c ORDER BY c.id DESC LIMIT 50`, [],
+    ),
+  };
 }));
 app.get('/api/panel/admin/catalogo', panelLimit, panelRoute(async ({ db: d, staff }) => {
   needAdmin(staff);

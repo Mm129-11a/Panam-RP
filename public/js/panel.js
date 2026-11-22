@@ -645,6 +645,15 @@
       if (currentView() === 'admin') render();
     }
   }
+  // Casos en Administración: se refrescan solos mientras se están viendo
+  setInterval(async () => {
+    if (!S?.staff?.mod || currentView() !== 'admin' || ui.adm !== 'casos' || document.hidden || ui.busy) return;
+    try {
+      const cases = (await api('/api/panel/admin/casos')).cases;
+      if (JSON.stringify(cases) !== JSON.stringify(ui.admCases)) { ui.admCases = cases; if (currentView() === 'admin' && ui.adm === 'casos') render(); }
+    } catch { /* se intenta en la próxima vuelta */ }
+  }, 15_000);
+
   function viewAdmin() {
     if (!S.staff?.mod) return `<div class="pn-note warn">${ico('alert')}<div>Esta sección es solo para moderadores y admins.</div></div>`;
     if (ui.adm === 'tienda' && !S.staff.admin) ui.adm = 'datos';
@@ -656,10 +665,11 @@
         const [cls, txt] = ESTADO[c.estado] || ['', c.estado];
         return `<li><span class="pn-li-ico ${c.origen === 'juicio' ? 'blue' : 'gold'}">${ico(c.origen === 'juicio' ? 'gavel' : 'receipt')}</span>
           <div><b>#${c.id} · ${c.origen === 'juicio' ? 'Juicio' : 'Denuncia'} · ${esc(c.tipo)}</b><small>Contra ${esc(c.acusado)} · por ${esc(c.denunciante || '—')} · ${fechaHora(c.created_at)}</small>
-          <small>Juez ${c.juez_id ? '✓' : '—'} · Fiscal ${c.fiscal_id ? '✓' : '—'} · Abogado ${c.abogado_id ? '✓' : '—'}${c.motivo ? ` · Motivo: ${esc(c.motivo)}` : ''}</small></div>
+          <div class="pn-crew">${[['⚖️ Juez', c.juez_id, c.juez], ['📜 Fiscal', c.fiscal_id, c.fiscal], ['🛡️ Abogado', c.abogado_id, c.abogado]].map(([t, id, n]) => `<span class="${id ? 'ok' : ''}">${t}: <b>${id ? esc(n || 'asignado') : 'pendiente'}</b></span>`).join('')}</div>
+          ${c.motivo ? `<small>Motivo: ${esc(c.motivo)}</small>` : ''}</div>
           <div class="pn-li-r"><span class="pn-tag ${cls}">${txt}</span></div></li>`;
       }).join('')}</ul>` : empty('scale', 'No hay casos todavía');
-      return `${head}<section class="pn-box"><h3 class="pn-h3">Todos los casos</h3>${list}</section>`;
+      return `${head}<section class="pn-box"><h3 class="pn-h3">Todos los casos</h3><p class="pn-muted">Se actualiza solo cada 15 segundos.</p>${list}</section>`;
     }
     if (ui.adm === 'tienda') {
       const items = ui.admCat;
@@ -892,7 +902,7 @@
     if (act === 'tab') { ui.tab = b.dataset.tab; render(); if (b.classList.contains('pn-short')) $('#pn-exp')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     if (act === 'work') { ui.work = b.dataset.tab; render(); return; }
     if (act === 'tienda-tab') { ui.shopTab = b.dataset.tab; render(); return; }
-    if (act === 'adm-tab') { ui.adm = b.dataset.tab; render(); return; }
+    if (act === 'adm-tab') { ui.adm = b.dataset.tab; if (ui.adm === 'casos') ui.admCases = null; render(); return; }
     if (act === 'item-editar') { ui.edit = (ui.admCat || []).find((x) => String(x.id) === b.dataset.id) || null; ui.photo = null; render(); $('form[data-form="item"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     if (act === 'item-nuevo') { ui.edit = null; ui.photo = null; render(); return; }
     if (act === 'den-tipo') { ui.denTipo = b.dataset.tipo || null; render(); if (ui.denTipo) setTimeout(() => $('form[data-form="denuncia"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); return; }
