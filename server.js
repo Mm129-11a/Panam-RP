@@ -19,7 +19,8 @@ import os from 'node:os';
 import { connectPostgres, connectSqlite, migrate } from './lib/db.js';
 import { configureJobs, jobsFor, publicJobs, SHIFT } from './lib/jobs.js';
 import * as panel from './lib/panel.js';
-import { buildCommands, handleCommand, sameCommands } from './lib/commands.js';
+import { buildCommands, COMMAND_LIST, COMMAND_NAMES, handleCommand, sameCommands } from './lib/commands.js';
+import { startGateway } from './lib/gateway.js';
 import { createErlc } from './lib/erlc.js';
 import { fetchRobloxProfile, hasCode, LINK_TTL, makeCode } from './lib/robloxlink.js';
 
@@ -58,6 +59,9 @@ const ERLC_KEY = (process.env.ERLC_API_KEY || '').trim();
 const ERLC_REQUIRE_INGAME = (process.env.ERLC_TURNO_EN_JUEGO || 'si').toLowerCase() !== 'no';
 // Vincular Roblox con un código en el perfil (ROBLOX_VINCULAR=no para solo comprobar que el usuario existe)
 const ROBLOX_LINK_REQUIRED = (process.env.ROBLOX_VINCULAR || 'si').toLowerCase() !== 'no';
+// Cómo llegan los comandos y botones: 'gateway' (por defecto: conexión permanente; el bot viejo sigue
+// funcionando a la vez) o 'url' (Interactions Endpoint URL; el bot viejo deja de recibir sus comandos).
+const DISCORD_MODE = /^url$/i.test(process.env.DISCORD_INTERACCIONES || '') ? 'url' : 'gateway';
 const HOME_GUILD = GUILD_ID || '1560736880478130178'; // servidor de Discord de Panamá RP
 // Puente a Discord (otro servicio en otra región) para cuando Discord bloquea la IP de Render.
 const RELAY_URL = /^https?:\/\/[\w.-]+(:\d+)?$/.test((process.env.RELAY_URL || '').replace(/\/$/, '')) ? process.env.RELAY_URL.replace(/\/$/, '') : '';
@@ -621,7 +625,7 @@ async function runCommand(interaction) {
       const roles = Array.isArray(interaction.member?.roles) ? interaction.member.roles : [];
       const guildRoles = bot ? await bot.guildRoles(interaction.guild_id || HOME_GUILD) : [];
       const [wlRole] = bot && WHITELIST_ROLE ? await bot.resolveRoles(interaction.guild_id || HOME_GUILD, [WHITELIST_ROLE]) : [];
-      const known = buildCommands(JOBS).some((c) => c.name === interaction.data?.name);
+      const known = COMMAND_NAMES.includes(interaction.data?.name);
       if (!known) console.log(`[comando] desconocido: /${interaction.data?.name} (tipo ${interaction.data?.type ?? '?'})`);
       out = await handleCommand(interaction, {
         db: store,
@@ -655,9 +659,12 @@ async function syncCommands() {
   const local = buildCommands(JOBS);
   const route = `/applications/${CLIENT_ID}/guilds/${HOME_GUILD}/commands`;
   const current = await bot.call('GET', route);
-  if (current.ok && sameCommands(current.data, local)) console.log(`Comandos de Discord: listos (${local.length})`);
-  else {
+  if (current.ok && sameCommands(current.data, local)) {
+    OUR_COMMAND_IDS = new Set(current.data.map((c) => c.id));
+    console.log(`Comandos de Discord: listos (${local.length})`);
+  } else {
     const r = await bot.call('PUT', route, local);
+    if (r.ok && Array.isArray(r.data)) OUR_COMMAND_IDS = new Set(r.data.map((c) => c.id));
     console.log(r.ok ? `Comandos de Discord: registrados (${local.length})`
       : `Comandos de Discord: no se pudieron registrar (error ${r.status}${r.code === 50001 ? ': vuelve a invitar el bot desde /bot/invitar' : ''})`);
   }
@@ -665,10 +672,65 @@ async function syncCommands() {
   const global = await bot.call('GET', `/applications/${CLIENT_ID}/commands`);
   if (global.ok && Array.isArray(global.data)) {
     OLD_COMMANDS = global.data.map((c) => c.name);
-    console.log(OLD_COMMANDS.length ? `Comandos viejos del bot (globales, no funcionan): /${OLD_COMMANDS.join(', /')}` : 'Comandos viejos del bot: ninguno');
+    if (OLD_COMMANDS.length) console.log(`Comandos del bot viejo (${OLD_COMMANDS.length}): ${DISCORD_MODE === 'gateway' ? 'los contesta el bot viejo' : 'NO funcionan en modo url'}`);
   }
 }
 let OLD_COMMANDS = [];
+let OUR_COMMAND_IDS = new Set();
+let gatewayOnce = false;
+
+// ¿Esta interacción es de la web? (lo demás es del bot viejo y se deja pasar)
+function isOurs(i) {
+  if (i?.type === 2 || i?.type === 4) {
+    if (OUR_COMMAND_IDS.size) return OUR_COMMAND_IDS.has(i.data?.id);
+    return Boolean(i.data?.guild_id) && COMMAND_NAMES.includes(i.data?.name);
+  }
+  if (i?.type === 3 || i?.type === 5) return /^wl:/.test(String(i.data?.custom_id || ''));
+  return false;
+}
+
+// Respuesta a una interacción (igual por la URL o por el gateway). 'after' sigue trabajando después de responder.
+async function answerInteraction(interaction) {
+  if (interaction.type === 2) {
+    // "El bot está pensando…" (privado) y el resultado llega en unos segundos
+    return { response: { type: 5, data: { flags: 64 } }, after: () => runCommand(interaction).catch((err) => console.error('[comando]', err.message)) };
+  }
+  let roles = [];
+  if (interaction.type !== 1 && interaction.guild_id) {
+    try { roles = await staffRoleIds(interaction.guild_id); } catch { roles = []; }
+  }
+  const { response, effect } = decide(interaction, { staffRoleIds: roles });
+  return { response, after: effect ? () => applyDecision(effect, interaction).catch((err) => console.error('[revisión]', err.message)) : null };
+}
+
+// Por el gateway: Discord manda las interacciones a los dos bots; la web contesta solo las suyas.
+async function onGatewayInteraction(interaction) {
+  if (!isOurs(interaction)) return;
+  const { response, after } = await answerInteraction(interaction);
+  const r = await discordFetch(`${API}/interactions/${interaction.id}/${encodeURIComponent(interaction.token)}/callback`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(response),
+  }).catch((err) => ({ ok: false, status: 0, err }));
+  if (!r.ok) {
+    console.error(`[gateway] no se pudo responder (${r.status || r.err?.message})`);
+    return;
+  }
+  after?.();
+}
+
+// En modo gateway, la Interactions Endpoint URL tiene que estar vacía (si no, Discord no manda nada
+// por el gateway y el bot viejo se queda sin sus comandos). Solo se borra si es la de esta web.
+async function releaseInteractionsUrl() {
+  const me = await bot.call('GET', '/applications/@me');
+  if (!me.ok) return console.log(`Interactions Endpoint URL: no se pudo revisar (error ${me.status})`);
+  const current = me.data?.interactions_endpoint_url || '';
+  if (!current) return console.log('Interactions Endpoint URL: vacía (bien: el bot viejo y la web reciben sus comandos)');
+  if (current !== `${BASE_URL}/api/discord/interactions`) return console.log(`Interactions Endpoint URL: apunta a otro sitio (${current}); no la toco`);
+  for (const value of [null, '']) {
+    const r = await bot.call('PATCH', '/applications/@me', { interactions_endpoint_url: value });
+    if (r.ok) return console.log('Interactions Endpoint URL: borrada (ahora todo llega por el gateway y el bot viejo vuelve a funcionar)');
+  }
+  console.log('Interactions Endpoint URL: no se pudo borrar sola. Bórrala en discord.com/developers → tu app → General Information.');
+}
 
 app.post('/api/discord/interactions', express.raw({ type: () => true, limit: '200kb' }), async (req, res) => {
   if (!PUBLIC_KEY) return res.status(503).json({ error: 'Falta DISCORD_PUBLIC_KEY.' });
@@ -682,20 +744,9 @@ app.post('/api/discord/interactions', express.raw({ type: () => true, limit: '20
   let interaction;
   try { interaction = JSON.parse(req.body.toString('utf8')); } catch { return res.status(400).json({ error: 'JSON inválido.' }); }
 
-  if (interaction.type === 2) {
-    // "El bot está pensando…" (privado) y el resultado llega en unos segundos
-    res.json({ type: 5, data: { flags: 64 } });
-    runCommand(interaction).catch((err) => console.error('[comando]', err.message));
-    return;
-  }
-
-  let roles = [];
-  if (interaction.type !== 1 && interaction.guild_id) {
-    try { roles = await staffRoleIds(interaction.guild_id); } catch { roles = []; }
-  }
-  const { response, effect } = decide(interaction, { staffRoleIds: roles });
+  const { response, after } = await answerInteraction(interaction);
   res.json(response); // Discord exige respuesta en menos de 3 s; lo demás va después
-  if (effect) applyDecision(effect, interaction).catch((err) => console.error('[revisión]', err.message));
+  after?.();
 });
 
 // Enlace corto para añadir el bot al servidor con los permisos justos.
@@ -883,7 +934,9 @@ app.listen(PORT, () => {
   console.log(missing.length ? `Botones Aceptar/Rechazar: falta ${missing.join(' y ')}` : 'Botones Aceptar/Rechazar: activos');
   if (BOT_TOKEN_RAW && !BOT_TOKEN) console.log('DISCORD_BOT_TOKEN no tiene el formato de un token de bot.');
   if (process.env.DISCORD_PUBLIC_KEY && !PUBLIC_KEY) console.log('DISCORD_PUBLIC_KEY no es válida (deben ser 64 caracteres).');
-  console.log(`Interactions Endpoint URL: ${BASE_URL}/api/discord/interactions`);
+  console.log(DISCORD_MODE === 'gateway'
+    ? 'Comandos y botones: por el gateway (el bot viejo sigue con sus comandos)'
+    : `Comandos y botones: por la Interactions Endpoint URL ${BASE_URL}/api/discord/interactions`);
   console.log(`Rol al aceptar: ${WHITELIST_ROLE || 'ninguno (falta WHITELIST_ROLE)'}`);
   getDb();
   console.log(erlc ? `ER:LC: conectado${ERLC_REQUIRE_INGAME ? ' (para iniciar turno hay que estar dentro del servidor)' : ''}` : 'ER:LC: falta ERLC_API_KEY');
@@ -899,5 +952,15 @@ app.listen(PORT, () => {
   } else {
     console.log('Puente a Discord: no configurado (RELAY_URL / RELAY_SECRET)');
   }
-  if (bot) touchGateway(BOT_TOKEN).then((r) => console.log(r.ok ? 'Bot de Discord: conectado' : `Bot de Discord: no se pudo conectar (${r.reason})`));
+  if (bot && DISCORD_MODE === 'gateway') {
+    startGateway({
+      token: BOT_TOKEN,
+      onDispatch: (t, d) => {
+        if (t === 'READY' && !gatewayOnce) { gatewayOnce = true; releaseInteractionsUrl().catch((err) => console.error('[gateway]', err.message)); }
+        if (t === 'INTERACTION_CREATE') onGatewayInteraction(d).catch((err) => console.error('[gateway]', err.message));
+      },
+    });
+  } else if (bot) {
+    touchGateway(BOT_TOKEN).then((r) => console.log(r.ok ? 'Bot de Discord: conectado (modo url)' : `Bot de Discord: no se pudo conectar (${r.reason})`));
+  }
 });

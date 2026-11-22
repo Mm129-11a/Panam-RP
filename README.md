@@ -73,5 +73,10 @@ Render gratis comparte su IP con muchos servicios y Discord a veces la bloquea h
 ## Comandos del bot
 
 El mismo bot de la whitelist tiene comandos de barra que usan la misma base de datos que el panel:
-`/crear-cedula`, `/cedula`, `/banco`, `/depositar`, `/retirar`, `/transferir`, `/multas`, `/pagar`, `/turno iniciar|terminar|estado`,
-`/multar`, `/arrestar`, `/antecedentes` (Policía en turno) y `/servidor` (ER:LC). Se registran solos al arrancar.
+`/crear-cedula`, `/cedula`, `/banco ver|depositar|retirar|transferir`, `/multas`, `/pagar`, `/turno iniciar|terminar|estado`,
+`/policia multar|arrestar|antecedentes` (Policía en turno) y `/servidor` (ER:LC). Se registran solos al arrancar.
+
+La web se conecta al gateway de Discord como un bot normal, así **el bot viejo sigue funcionando a la vez** con sus
+propios comandos: Discord les manda todo a los dos y cada uno contesta solo los suyos. Para eso la *Interactions
+Endpoint URL* de la app debe estar vacía (la web la borra sola si apunta a ella). Con `DISCORD_INTERACCIONES=url`
+se usa la URL en vez del gateway (entonces el bot viejo no recibe sus comandos).

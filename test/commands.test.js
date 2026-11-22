@@ -172,3 +172,25 @@ test('/crear-cedula usa el Roblox vinculado y sale igual en la web', async () =>
   r = await handleCommand(cmd(POLI, 'crear-cedula', bad), ctx(db, extra));
   assert.match(r.private.content, /^❌/);
 });
+
+test('/banco y /policia agrupan los comandos (sin chocar con los del bot viejo)', async () => {
+  const { COMMAND_NAMES } = await import('../lib/commands.js');
+  const viejos = ['sugerir', 'ayuda', 'antecedentes', 'entorno', 'bloquear-ticket', 'desbloquear-ticket', 'reclamar', 'cerrar-ticket', 'logs', 'alerta', 'anon', 'anon-mensaje', 'verificar', 'balance', 'depositar', 'retirar', 'transferir', 'cobrar-salario', 'top', 'dni', 'licencia', 'multa', 'vehiculo', 'server', 'erlc', 'staff', 'mod', 'casino', 'shop', 'ticket', 'admin', 'inventario', 'banda', 'robar', 'blacklist', 'decir', 'social', 'arrestar', 'salario-configurar', 'ver-salarios', 'config'];
+  const nombres = buildCommands(JOBS).map((c) => c.name);
+  assert.deepEqual([...nombres].sort(), [...COMMAND_NAMES].sort());
+  assert.deepEqual(nombres.filter((n) => viejos.includes(n)), []);
+
+  const db = await setup();
+  await citizen(db, ANA, 'Ana');
+  await citizen(db, POLI, 'Poli');
+  const sub = (name, options) => [{ type: 1, name, options }];
+  let r = await handleCommand(cmd(ANA, 'banco', sub('retirar', [{ name: 'monto', type: 4, value: 500 }])), ctx(db));
+  assert.match(r.private.content, /500/);
+  assert.equal((await P.getAccount(db, ANA.id)).efectivo, P.MONEY.startEfectivo + 500);
+  r = await handleCommand(cmd(ANA, 'banco', sub('ver', [])), ctx(db));
+  assert.ok(r.private.embeds || r.public, 'muestra el saldo');
+  await P.startShift(db, POLI.id, 'policia', { jobs: JOBS, allowed: ['policia'], now: Date.now() });
+  r = await handleCommand(cmd(POLI, 'policia', sub('arrestar', [{ name: 'usuario', type: 6, value: ANA.id }, { name: 'minutos', type: 4, value: 10 }, { name: 'cargos', type: 3, value: 'Robo' }])), ctx(db, { jobs: ['policia'] }));
+  assert.match(r.private.content, /Arresto registrado/);
+  assert.equal((await P.listArrests(db, ANA.id)).length, 1);
+});
