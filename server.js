@@ -621,6 +621,8 @@ async function runCommand(interaction) {
       const roles = Array.isArray(interaction.member?.roles) ? interaction.member.roles : [];
       const guildRoles = bot ? await bot.guildRoles(interaction.guild_id || HOME_GUILD) : [];
       const [wlRole] = bot && WHITELIST_ROLE ? await bot.resolveRoles(interaction.guild_id || HOME_GUILD, [WHITELIST_ROLE]) : [];
+      const known = buildCommands(JOBS).some((c) => c.name === interaction.data?.name);
+      if (!known) console.log(`[comando] desconocido: /${interaction.data?.name} (tipo ${interaction.data?.type ?? '?'})`);
       out = await handleCommand(interaction, {
         db: store,
         jobs: jobsFor(roles, guildRoles, JOBS),
@@ -653,11 +655,20 @@ async function syncCommands() {
   const local = buildCommands(JOBS);
   const route = `/applications/${CLIENT_ID}/guilds/${HOME_GUILD}/commands`;
   const current = await bot.call('GET', route);
-  if (current.ok && sameCommands(current.data, local)) return console.log(`Comandos de Discord: listos (${local.length})`);
-  const r = await bot.call('PUT', route, local);
-  console.log(r.ok ? `Comandos de Discord: registrados (${local.length})`
-    : `Comandos de Discord: no se pudieron registrar (error ${r.status}${r.code === 50001 ? ': vuelve a invitar el bot desde /bot/invitar' : ''})`);
+  if (current.ok && sameCommands(current.data, local)) console.log(`Comandos de Discord: listos (${local.length})`);
+  else {
+    const r = await bot.call('PUT', route, local);
+    console.log(r.ok ? `Comandos de Discord: registrados (${local.length})`
+      : `Comandos de Discord: no se pudieron registrar (error ${r.status}${r.code === 50001 ? ': vuelve a invitar el bot desde /bot/invitar' : ''})`);
+  }
+  // Comandos viejos del bot (globales): ya no los atiende nadie, porque las interacciones llegan a esta web
+  const global = await bot.call('GET', `/applications/${CLIENT_ID}/commands`);
+  if (global.ok && Array.isArray(global.data)) {
+    OLD_COMMANDS = global.data.map((c) => c.name);
+    console.log(OLD_COMMANDS.length ? `Comandos viejos del bot (globales, no funcionan): /${OLD_COMMANDS.join(', /')}` : 'Comandos viejos del bot: ninguno');
+  }
 }
+let OLD_COMMANDS = [];
 
 app.post('/api/discord/interactions', express.raw({ type: () => true, limit: '200kb' }), async (req, res) => {
   if (!PUBLIC_KEY) return res.status(503).json({ error: 'Falta DISCORD_PUBLIC_KEY.' });
