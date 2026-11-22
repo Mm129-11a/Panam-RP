@@ -83,12 +83,12 @@ se usa la URL en vez del gateway (entonces el bot viejo no recibe sus comandos).
 
 ## Comandos de antes (41) y justicia
 
-La web contesta también los 41 comandos que ya tenía el bot (`/balance`, `/dni`, `/multa`, `/arrestar`, `/ticket`,
-`/casino`, `/shop`, `/banda`, `/mod`, `/config`…), con el mismo nombre y opciones, sobre la misma base de datos:
-`/dni crear` es la cédula de la web, `/balance` es el mismo banco, y multas y arrestos salen en el expediente.
+Los 41 comandos que ya tenía el bot (`/balance`, `/dni`, `/multa`, `/arrestar`…) los sigue contestando el bot de antes,
+sin cambios. La web solo **lee** `/arrestar`, `/multa` (solo ATT), `/antecedentes`, `/dni`, `/licencia` y `/vehiculo`
+y lo guarda en el expediente. El dinero del bot de antes no se copia.
 
-- **Multas:** solo la ATT. **Arrestos y antecedentes:** Policía Nacional, Aeronaval y Senafront.
-- **Juicios:** después de `/arrestar usuario`, el oficial toca *Enviar a juicio* → llega a los jueces.
-- **Denuncias:** `/config canal denuncias #canal` publica los botones (Robo, Agresión… y Otra).
-- Juez acepta → lo toman un fiscal y un abogado (uno de cada). Canales: `/config canal jueces` y `/config canal abogados`.
-- Otros paneles: `/config canal tickets` y `/config canal verificacion` publican sus botones.
+- **Denuncias:** panel → Justicia (cualquiera). **Juicios:** solo el rol Abogados y fiscales.
+- Llegan por **DM** a los jueces; si un juez acepta, por DM a Abogados y fiscales: entra un fiscal y un abogado
+  (uno de cada). Al juez que aceptó se le actualiza su DM cada vez que alguien entra.
+- **Trabajos:** uno por rol de Discord (Policía Nacional, Aeronaval, Senafront, ATT, Bomberos); el turno solo registra el tiempo.
+- **Administración:** admins (stock de carros y casas con foto; cada compra les llega por DM) y moderadores (base de datos y casos).

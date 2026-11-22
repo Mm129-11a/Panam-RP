@@ -613,7 +613,7 @@
     const denuncia = `<section class="pn-box"><div class="pn-box-h"><span class="pn-box-ico">${ico('receipt')}</span><div><b>Poner una denuncia</b><small>Elige qué quieres denunciar</small></div></div>
         <div class="pn-den">${J.tipos.map((x) => `<button type="button" class="pn-den-b ${ui.denTipo === x.k ? 'on' : ''}" data-act="den-tipo" data-tipo="${esc(x.k)}"><span>${x.e}</span>${esc(x.n)}</button>`).join('')}</div>
         ${denForm}</section>`;
-    const juicio = !J.policia ? '' : `<section class="pn-box"><div class="pn-box-h"><span class="pn-box-ico blue">${ico('gavel')}</span><div><b>Enviar un juicio (Policía)</b><small>Le llega por DM a los jueces</small></div></div>
+    const juicio = !J.juicio ? '' : `<section class="pn-box"><div class="pn-box-h"><span class="pn-box-ico blue">${ico('gavel')}</span><div><b>Crear un juicio</b><small>Abogados y fiscales · le llega por DM a los jueces</small></div></div>
         <form data-form="juicio" novalidate>
           <div class="pn-two">
             ${field('j-acusado', 'Nombre del acusado', '<input class="ap-input" id="f-j-acusado" name="acusado" maxlength="80" required>')}

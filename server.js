@@ -904,8 +904,12 @@ async function panelContext(req) {
   const info = await memberInfo(user.id);
   const roles = bot ? await bot.guildRoles(HOME_GUILD) : [];
   const jobs = jobsFor(info?.roles || [], roles, JOBS);
-  return { user, db: store, jobs, staff: staffRank(info?.roles || []) };
+  return { user, db: store, jobs, roles: info?.roles || [], staff: staffRank(info?.roles || []) };
 }
+
+// Solo este rol puede crear juicios (Abogados y fiscales)
+const TRIAL_ROLES = ['1565913945980801064'];
+const canTrial = (roles = []) => roles.some((r) => TRIAL_ROLES.includes(r));
 
 // Moderadores y admins de la web (por rol de Discord)
 const WEB_MODS = ['1561821550557265930', '1561818194107301981', '1561818055053410394'];
@@ -1000,15 +1004,15 @@ const justiceEnv = (d) => ({
   dm: (userId, payload) => (bot ? bot.dm(userId, payload) : Promise.resolve({ ok: false })),
   api: (m, r, b, o) => (bot ? bot.call(m, r, b, o) : Promise.resolve({ ok: false })),
 });
-app.get('/api/panel/justicia', panelLimit, panelRoute(async ({ user, db: d, jobs }) => ({
-  cases: await listMyCases(d, user.id), tipos: DENUNCIAS.map(([k, n, e]) => ({ k, n, e })), policia: hasPolice(jobs),
+app.get('/api/panel/justicia', panelLimit, panelRoute(async ({ user, db: d, roles }) => ({
+  cases: await listMyCases(d, user.id), tipos: DENUNCIAS.map(([k, n, e]) => ({ k, n, e })), juicio: canTrial(roles),
 })));
 post('/justicia/denuncia', async ({ user, db: d }, req) => {
   if (!bot) throw new panel.PanelError(503, 'El bot no está conectado.');
   return submitCase(justiceEnv(d), user, { ...(req.body || {}), origen: 'denuncia' });
 });
-post('/justicia/juicio', async ({ user, db: d, jobs }, req) => {
-  if (!hasPolice(jobs)) throw new panel.PanelError(403, 'Solo la Policía (Policía Nacional, Aeronaval o Senafront) puede mandar juicios.');
+post('/justicia/juicio', async ({ user, db: d, roles }, req) => {
+  if (!canTrial(roles)) throw new panel.PanelError(403, 'Solo Abogados y fiscales pueden crear juicios.');
   if (!bot) throw new panel.PanelError(503, 'El bot no está conectado.');
   const me = await panel.getCharacter(d, user.id);
   return submitCase(justiceEnv(d), user, { ...(req.body || {}), origen: 'juicio', denunciante: me ? `${me.nombre} ${me.apellidos}` : user.name });

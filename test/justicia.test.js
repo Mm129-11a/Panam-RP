@@ -77,7 +77,7 @@ test('juicio de la Policía y rechazo del juez con motivo', async () => {
   await assert.rejects(() => submitCase(e, POLI, { origen: 'juicio', acusado: 'María', edad: 'x', acusacion: 'Robo', hechos: 'Robó la joyería del centro' }), (err) => Boolean(err.fields?.edad));
   const r = await submitCase(e, POLI, { origen: 'juicio', acusado: 'María Castillo', edad: '26', acusacion: 'Robo a mano armada', hechos: 'Robó la joyería del centro a las 10 pm', denunciante: 'Poli Martínez' });
   const fields = e.dms[0].payload.embeds[0].fields.map((f) => f.name);
-  assert.ok(fields.includes('Edad') && fields.includes('Oficial') && fields.includes('Acusación'));
+  assert.ok(fields.includes('Edad') && fields.includes('Presentado por') && fields.includes('Acusación'));
   assert.equal(justiceModal(btn(`cs:no:${r.id}`)).custom_id, `cs:nom:${r.id}`);
   const out = await runJustice(modalSubmit(`cs:nom:${r.id}`, { motivo: 'Faltan pruebas' }), ctxOf(e, '2002'));
   assert.match(out.private.content, /rechazado/);
