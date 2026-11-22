@@ -1041,6 +1041,11 @@ post('/justicia/juicio', async ({ user, db: d, roles }, req) => {
   return submitCase(justiceEnv(d), user, { ...(req.body || {}), origen: 'juicio', denunciante: me ? `${me.nombre} ${me.apellidos}` : user.name });
 });
 
+// Mercado negro (se paga en efectivo)
+app.get('/api/panel/negro', panelLimit, panelRoute(async ({ user, db: d }) => ({
+  items: (await market.listCatalog(d)).filter((x) => x.tipo === 'negro'), mine: await market.myBlackMarket(d, user.id),
+})));
+
 // Concesionario e inmobiliaria
 app.get('/api/panel/tienda', panelLimit, panelRoute(async ({ user, db: d }) => ({
   catalog: await market.listCatalog(d), mine: await market.myAssets(d, user.id), colors: market.COLORS,
@@ -1057,15 +1062,16 @@ async function notifyPurchase(d, user, b) {
   const c = await panel.getCharacter(d, user.id);
   const admins = await membersWithRoles(WEB_ADMINS);
   const embed = {
-    title: `🛒 Nueva compra: ${b.nombre}`, color: b.tipo === 'vehiculo' ? 0x4c7dff : 0x22c55e,
+    title: `${b.tipo === 'negro' ? '🕶️ Mercado negro' : '🛒 Nueva compra'}: ${b.nombre}`, color: b.tipo === 'negro' ? 0x111111 : b.tipo === 'vehiculo' ? 0x4c7dff : 0x22c55e,
     fields: [
       { name: 'Comprador', value: `${c ? `${c.nombre} ${c.apellidos}` : user.name} (<@${user.id}>)`, inline: true },
       { name: 'Cédula', value: c?.cedula || '—', inline: true },
       { name: 'Roblox', value: c?.roblox_name || '—', inline: true },
       { name: 'Precio', value: `$${Number(b.precio).toLocaleString('es-PA')}`, inline: true },
-      ...(b.tipo === 'vehiculo' ? [{ name: 'Placa', value: `\`${b.placa}\``, inline: true }, { name: 'Color', value: b.color, inline: true }] : [{ name: 'Dirección', value: b.direccion, inline: true }]),
+      ...(b.tipo === 'vehiculo' ? [{ name: 'Placa', value: `\`${b.placa}\``, inline: true }, { name: 'Color', value: b.color, inline: true }]
+        : b.tipo === 'casa' ? [{ name: 'Dirección', value: b.direccion, inline: true }] : [{ name: 'Pagado', value: 'En efectivo', inline: true }]),
     ],
-    footer: { text: 'Panamá RP · Concesionario e inmobiliaria de la web' }, timestamp: new Date().toISOString(),
+    footer: { text: b.tipo === 'negro' ? 'Panamá RP · Mercado negro de la web' : 'Panamá RP · Concesionario e inmobiliaria de la web' }, timestamp: new Date().toISOString(),
   };
   for (const id of admins) await bot.dm(id, { embeds: [embed] }).catch(() => {});
 }

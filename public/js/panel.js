@@ -21,6 +21,7 @@
     car: '<path d="M5 16V11l2-5h10l2 5v5"/><path d="M3 16h18v3H3z"/><circle cx="7.5" cy="13.5" r="1"/><circle cx="16.5" cy="13.5" r="1"/>',
     home: '<path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
     store: '<path d="M4 9h16l-1-5H5z"/><path d="M5 9v11h14V9"/><path d="M9 20v-5h6v5"/>',
+    mask: '<path d="M3 9c3-2 6-2 9 0 3-2 6-2 9 0-1 5-4 7-6 7-1.5 0-2-1-3-2-1 1-1.5 2-3 2-2 0-5-2-6-7Z"/><circle cx="8" cy="11" r="1.2"/><circle cx="16" cy="11" r="1.2"/>',
     scale: '<path d="M12 4v16M6 20h12M5 7h14"/><path d="M5 7 2.5 13a2.5 2.5 0 0 0 5 0L5 7ZM19 7l-2.5 6a2.5 2.5 0 0 0 5 0L19 7Z"/>',
     db: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>',
     book: '<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/>',
@@ -48,7 +49,7 @@
   const head = $('#pn-head');
   const main = $('#pn-main');
   let S = null;
-  const ui = { tab: 'info', work: 'historial', search: null, activity: null, busy: false, flip: false, link: null, shop: null, shopTab: 'vehiculo', just: null, denTipo: null, adm: 'datos', admSearch: null, admCases: null, admCat: null, edit: null, photo: null };
+  const ui = { negro: null, tab: 'info', work: 'historial', search: null, activity: null, busy: false, flip: false, link: null, shop: null, shopTab: 'vehiculo', just: null, denTipo: null, adm: 'datos', admSearch: null, admCases: null, admCat: null, edit: null, photo: null };
 
   // ─── Utilidades ───
   let toastT = 0;
@@ -97,6 +98,7 @@
     banco: () => [`Banco, <em>${esc(handle())}</em>`, 'Depósitos, retiros, transferencias y movimientos'],
     tienda: () => ['Concesionario e <em>inmobiliaria</em>', 'Compra carros y casas con el dinero de tu banco'],
     justicia: () => ['Denuncias y <em>juicios</em>', 'Lo que mandes les llega por mensaje privado a los jueces'],
+    negro: () => ['Mercado negro', 'Pagas en efectivo y nadie se entera'],
     admin: () => ['<em>Administración</em>', S.staff?.admin ? 'Admins: stock de carros y casas, base de datos y casos' : 'Moderadores: base de datos y casos'],
   };
   function renderHead(view) {
@@ -136,14 +138,15 @@
   }
 
   // ─── Pantallas (#inicio, #perfil, #trabajos, #banco) ───
-  const VIEWS = ['inicio', 'perfil', 'trabajos', 'banco', 'tienda', 'justicia', 'admin'];
+  const VIEWS = ['inicio', 'perfil', 'trabajos', 'banco', 'tienda', 'negro', 'justicia', 'admin'];
   const currentView = () => { const h = location.hash.slice(1); return VIEWS.includes(h) ? h : 'inicio'; };
 
   function render() {
     const view = currentView();
     renderHead(view);
     const banner = S.modo === 'prueba' ? `<div class="pn-note warn">${ico('alert')}<div>Modo de prueba: falta la base de datos y lo que hagas aquí se borra al reiniciar la web.</div></div>` : '';
-    main.innerHTML = banner + ({ perfil: viewPerfil, trabajos: viewTrabajos, banco: viewBanco, tienda: viewTienda, justicia: viewJusticia, admin: viewAdmin }[view] || viewInicio)();
+    main.innerHTML = banner + ({ perfil: viewPerfil, trabajos: viewTrabajos, banco: viewBanco, tienda: viewTienda, negro: viewNegro, justicia: viewJusticia, admin: viewAdmin }[view] || viewInicio)();
+    if (view === 'negro' && !ui.negro) loadNegro();
     if (view === 'tienda' && !ui.shop) loadShop();
     if (view === 'justicia' && !ui.just) loadJusticia();
     if (view === 'admin') loadAdmin();
@@ -159,6 +162,7 @@
   function viewInicio() {
     return `${S.character ? '' : `<div class="pn-note info">${ico('id')}<div><b>Crea tu cédula</b> para abrir tu cuenta del banco y poder trabajar.</div><a class="pn-btn gold" href="#perfil">Crear cédula</a></div>`}
       <section class="pn-welcome">
+        ${flag('big')}
         <div class="pn-welcome-txt">
           <h2 class="${handle().length > 14 ? 'long' : ''}">Bienvenido,<br><em>${esc(handle())}</em></h2>
           <p>Selecciona una categoría para acceder a las herramientas</p>
@@ -169,12 +173,13 @@
           <a class="pn-stat" href="#banco"><span class="pn-stat-ico">${ico('bank')}</span><b>${S.account ? money(S.account.banco) : 'Sin cuenta'}</b><small>Saldo en banco</small><em>Ver banco ${ico('arrow')}</em></a>
         </div>
       </section>
-      <h3 class="pn-sec"><span>${ico('grid')}</span>Categorías</h3>
+      <h3 class="pn-sec">${flag()}Categorías</h3>
       <div class="pn-cats">
         ${cat('#perfil', 'green', 'user', 'Mi perfil', 'Cédula, banco, multas y antecedentes')}
         ${hasWork() ? cat('#trabajos', 'blue', 'power', 'Servicio Trabajos', S.jobs.length === 1 ? `Tu trabajo: ${jobInfo(S.jobs[0]).name}` : 'Inicia y termina tus turnos') : ''}
         ${cat('#banco', 'gold', 'bank', 'Banco', 'Depósitos, retiros y transferencias')}
         ${cat('#tienda', 'purple', 'store', 'Carros y casas', 'Concesionario e inmobiliaria')}
+        ${cat('#negro', 'dark', 'mask', 'Mercado negro', 'Se paga en efectivo')}
         ${cat('#justicia', 'cyan', 'scale', 'Justicia', 'Denuncias y juicios')}
         ${S.staff?.mod ? cat('#admin', 'red', 'shield', 'Administración', S.staff.admin ? 'Stock, base de datos y casos' : 'Base de datos y casos') : ''}
         ${cat('/#normativa', 'red', 'book', 'Normativa', 'Reglas del servidor')}
@@ -243,6 +248,8 @@
       </div>`;
   }
 
+  // La bandera de Panamá en cuartos (marca del panel)
+  const flag = (cls = '') => `<span class="pn-flag ${cls}" aria-hidden="true"><i></i><i></i></span>`;
   const empty = (icon, text) => `<div class="pn-empty">${ico(icon)}<p>${text}</p></div>`;
 
   function tabInfo() {
@@ -587,6 +594,36 @@
     }).join('')}</div>`;
   }
 
+  // ─── Mercado negro ───
+  async function loadNegro() {
+    try { ui.negro = await api('/api/panel/negro'); } catch (e) { ui.negro = { error: e.error }; }
+    if (currentView() === 'negro') render();
+  }
+  function viewNegro() {
+    if (!S.account) return `<div class="pn-note info">${ico('id')}<div><b>Necesitas tu cédula</b> para comprar.</div><a class="pn-btn gold" href="#perfil">Crear cédula</a></div>`;
+    const N = ui.negro;
+    if (!N) return '<div class="pn-loading"><span class="pn-spin" aria-hidden="true"></span>Cargando…</div>';
+    if (N.error) return `<div class="pn-note warn">${ico('alert')}<div>${esc(N.error)}</div></div>`;
+    const cash = S.account.efectivo;
+    const items = N.items.length ? `<div class="pn-shop">${N.items.map((x) => {
+      const agotado = x.stock !== null && x.stock !== undefined && x.stock <= 0;
+      const can = !agotado && cash >= x.precio;
+      return `<form class="pn-item negro" data-form="comprar" novalidate>
+        <input type="hidden" name="id" value="${x.id}">
+        ${x.imagen ? `<img class="pn-item-img" src="${esc(x.imagen)}" alt="" loading="lazy">` : `<span class="pn-item-ico dark">${ico('mask')}</span>`}
+        <b>${esc(x.nombre)}</b><small>${esc(x.detalle || '')}</small>
+        <strong>${money(x.precio)}</strong>
+        ${x.stock === null || x.stock === undefined ? '' : `<span class="pn-tag ${agotado ? 'bad' : ''}">${agotado ? 'Agotado' : `Quedan ${x.stock}`}</span>`}
+        <button class="pn-btn ${can ? 'gold' : 'ghost'}" type="submit" ${can ? '' : 'disabled'}>${agotado ? 'Agotado' : can ? 'Comprar en efectivo' : 'Te falta efectivo'}</button>
+      </form>`;
+    }).join('')}</div>` : empty('mask', 'No hay nada por ahora. Vuelve más tarde.');
+    const mine = N.mine.length ? `<ul class="pn-list">${N.mine.map((x) => `<li><span class="pn-li-ico dark">${ico('mask')}</span><div><b>${esc(x.nombre)}</b><small>${fechaHora(x.created_at)}</small></div></li>`).join('')}</ul>` : empty('mask', 'Todavía no has comprado nada aquí');
+    return `<section class="pn-negro-top"><div><b>${money(cash)}</b><small>Efectivo disponible</small></div>
+        <p>Aquí solo se paga en efectivo. Si te falta, retira dinero en el <a href="#banco">banco</a>. Lo que compres te lo entrega un admin dentro del juego.</p></section>
+      ${items}
+      <section class="pn-box"><h3 class="pn-h3">Lo que compraste</h3>${mine}</section>`;
+  }
+
   // ─── Justicia: denuncias (todos) y juicios (Policía) ───
   async function loadJusticia() {
     try { ui.just = await api('/api/panel/justicia'); } catch (e) { ui.just = { error: e.error }; }
@@ -657,7 +694,7 @@
   function viewAdmin() {
     if (!S.staff?.mod) return `<div class="pn-note warn">${ico('alert')}<div>Esta sección es solo para moderadores y admins.</div></div>`;
     if (ui.adm === 'tienda' && !S.staff.admin) ui.adm = 'datos';
-    const tabs = [['datos', 'db', 'Base de datos', 'Buscar ciudadanos'], ['casos', 'scale', 'Casos', 'Denuncias y juicios'], ...(S.staff.admin ? [['tienda', 'store', 'Stock', 'Carros y casas']] : [])];
+    const tabs = [['datos', 'db', 'Base de datos', 'Buscar ciudadanos'], ['casos', 'scale', 'Casos', 'Denuncias y juicios'], ...(S.staff.admin ? [['tienda', 'store', 'Stock', 'Carros, casas y mercado negro']] : [])];
     const head = `<div class="pn-bigtabs ${tabs.length === 3 ? 'three' : ''}">${tabs.map(([k, i, t, sub]) => `<button type="button" class="${ui.adm === k ? 'on' : ''}" data-act="adm-tab" data-tab="${k}">${ico(i)}<span><b>${t}</b><small>${sub}</small></span></button>`).join('')}</div>`;
     if (ui.adm === 'casos') {
       const C = ui.admCases;
@@ -678,7 +715,7 @@
           <h4>${ico(e.id ? 'swap' : 'store')}${e.id ? `Editar #${e.id}` : 'Agregar al stock'}</h4>
           ${e.id ? `<input type="hidden" name="id" value="${e.id}">` : ''}
           <div class="pn-two">
-            ${field('i-tipo', 'Tipo', `<div class="ap-select"><select class="ap-input" id="f-i-tipo" name="tipo" required><option value="vehiculo"${e.tipo !== 'casa' ? ' selected' : ''}>🚗 Carro / moto</option><option value="casa"${e.tipo === 'casa' ? ' selected' : ''}>🏠 Casa / local</option></select></div>`)}
+            ${field('i-tipo', 'Tipo', `<div class="ap-select"><select class="ap-input" id="f-i-tipo" name="tipo" required><option value="vehiculo"${e.tipo !== 'casa' ? ' selected' : ''}>🚗 Carro / moto</option><option value="casa"${e.tipo === 'casa' ? ' selected' : ''}>🏠 Casa / local</option><option value="negro"${e.tipo === 'negro' ? ' selected' : ''}>🕶️ Mercado negro</option></select></div>`)}
             ${field('i-nombre', 'Nombre', `<input class="ap-input" id="f-i-nombre" name="nombre" maxlength="60" value="${esc(e.nombre || '')}" placeholder="Ej: Toyota Hilux 2024" required>`)}
             ${field('i-precio', 'Precio ($)', `<input class="ap-input" id="f-i-precio" name="precio" inputmode="numeric" value="${e.precio ?? ''}" placeholder="Ej: 45000" required>`)}
             ${field('i-stock', 'En stock (vacío = sin límite)', `<input class="ap-input" id="f-i-stock" name="stock" inputmode="numeric" value="${e.stock ?? ''}" placeholder="Ej: 3">`)}
@@ -690,10 +727,10 @@
           <div class="pn-row"><button class="pn-btn gold" type="submit">${e.id ? 'Guardar cambios' : 'Agregar'}</button>${e.id ? '<button class="pn-btn ghost" type="button" data-act="item-nuevo">Cancelar</button>' : ''}</div>
         </form>`;
       const list = !items ? '<p class="pn-muted">Cargando…</p>' : items.length ? `<ul class="pn-list">${items.map((x) => `<li>
-          ${x.imagen ? `<img class="pn-li-img" src="${esc(x.imagen)}" alt="">` : `<span class="pn-li-ico ${x.tipo === 'vehiculo' ? 'blue' : 'green'}">${ico(x.tipo === 'vehiculo' ? 'car' : 'home')}</span>`}
-          <div><b>${esc(x.nombre)}</b><small>${money(x.precio)} · ${x.stock === null || x.stock === undefined ? 'sin límite' : `stock ${x.stock}`}${x.detalle ? ` · ${esc(x.detalle)}` : ''}</small></div>
+          ${x.imagen ? `<img class="pn-li-img" src="${esc(x.imagen)}" alt="">` : `<span class="pn-li-ico ${x.tipo === 'vehiculo' ? 'blue' : x.tipo === 'negro' ? 'dark' : 'green'}">${ico(x.tipo === 'vehiculo' ? 'car' : x.tipo === 'negro' ? 'mask' : 'home')}</span>`}
+          <div><b>${x.tipo === 'negro' ? '🕶️ ' : ''}${esc(x.nombre)}</b><small>${money(x.precio)} · ${x.stock === null || x.stock === undefined ? 'sin límite' : `stock ${x.stock}`}${x.detalle ? ` · ${esc(x.detalle)}` : ''}</small></div>
           <div class="pn-li-r"><button class="pn-btn ghost sm" type="button" data-act="item-editar" data-id="${x.id}">Editar</button><button class="pn-btn ghost sm" type="button" data-act="item-quitar" data-id="${x.id}">Quitar</button></div></li>`).join('')}</ul>` : empty('store', 'No hay nada en stock');
-      return `${head}<div class="pn-two"><section class="pn-box">${form}</section><section class="pn-box"><h3 class="pn-h3">En venta</h3><p class="pn-muted">Cada compra les llega por DM a los admins.</p>${list}</section></div>`;
+      return `${head}<div class="pn-two"><section class="pn-box">${form}</section><section class="pn-box"><h3 class="pn-h3">En venta</h3><p class="pn-muted">Carros, casas y mercado negro. Cada compra les llega por DM a los admins.</p>${list}</section></div>`;
     }
     const R = ui.admSearch;
     const results = R === null ? '' : R.length ? `<ul class="pn-list">${R.map((p) => `<li><span class="pn-li-ico blue">${ico('user')}</span>
@@ -870,8 +907,8 @@
         render();
       } else if (kind === 'comprar') {
         const r = await api('/api/panel/tienda/comprar', { id: Number(f.id), color: f.color });
-        toast(r.bought.tipo === 'vehiculo' ? `¡Compraste ${r.bought.nombre}! Placa ${r.bought.placa}` : `¡Compraste ${r.bought.nombre}! ${r.bought.direccion}`);
-        ui.shop = null; ui.shopTab = 'mios';
+        toast(r.bought.tipo === 'vehiculo' ? `¡Compraste ${r.bought.nombre}! Placa ${r.bought.placa}` : r.bought.tipo === 'casa' ? `¡Compraste ${r.bought.nombre}! ${r.bought.direccion}` : `Compraste ${r.bought.nombre}. Un admin te lo entrega en el juego.`);
+        if (r.bought.tipo === 'negro') ui.negro = null; else { ui.shop = null; ui.shopTab = 'mios'; }
         await refresh();
       } else if (kind === 'buscar') {
         ui.search = (await api(`/api/panel/policia/buscar?q=${encodeURIComponent(f.q || '')}`)).results;

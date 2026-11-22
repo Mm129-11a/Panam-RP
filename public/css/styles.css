@@ -419,3 +419,19 @@ textarea.ap-input{min-height:112px;resize:vertical;line-height:1.5}
 /* Código del servidor en la portada */
 .hero-code{margin:18px 0 0;background:rgba(10,14,24,.55);font-size:17px}
 .hero-code b{font-size:20px;color:#fff}
+
+/* ═══════════ Tema Panamá: azul noche, rojo y blanco de la bandera ═══════════ */
+:root{
+  --bg:#071430; --bg2:#0a1a3c; --card:#0c1d42; --card2:#10254f; --line:rgba(150,178,255,.16);
+  --muted:#9fb0d4; --red:#d21f3c; --red2:#e8213f; --blue:#1f4fc2; --blue2:#3f6fe6;
+  --sans:'Saira',system-ui,-apple-system,sans-serif;
+}
+/* etiquetas en minúscula normal */
+.eyebrow,.ap-kicker,.ap-label{text-transform:none;letter-spacing:.01em}
+.eyebrow{font-size:14px}
+.ap-label{font-size:13px}
+/* franja con los cuartos de la bandera arriba de la portada y la whitelist */
+body > header{border-top:0}
+body > header::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,#f5f7fc 0 25%,#d21f3c 25% 50%,#1f4fc2 50% 75%,#f5f7fc 75%)}
+footer{background:#050e24}
+header{background:rgba(7,20,48,.88)}
