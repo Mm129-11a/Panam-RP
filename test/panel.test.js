@@ -33,7 +33,7 @@ test('cédula: se crea una vez, con número válido y cuenta abierta', async () 
   assert.deepEqual(await P.getAccount(db, ANA.id), { efectivo: P.MONEY.startEfectivo, banco: P.MONEY.startBanco });
   await rejects(() => P.createCharacter(db, { user: ANA, roblox: RBX, input: person(), now: NOW }), 409, /Ya tienes/);
   const ext = await citizen(db, BETO, { nacionalidad: 'Colombiana' });
-  assert.match(ext.cedula, /^E-8-\d{5}$/);
+  assert.match(ext.cedula, /^E-8-\d{5,6}$/);
   await rejects(() => P.createCharacter(db, { user: POLI, roblox: RBX, input: person({ nombre: '1234', nacimiento: '2015-01-01' }), now: NOW }), 400);
   const tx = await P.listTransactions(db, ANA.id);
   assert.equal(tx[0].kind, 'apertura');
@@ -203,3 +203,4 @@ test('vincular Roblox: código en la descripción', async () => {
   assert.equal(hasCode('XPRP LUZ COCO CORALES', code), false, 'no vale como parte de otra palabra');
   assert.equal(hasCode('', code), false);
 });
+

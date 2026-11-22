@@ -345,11 +345,13 @@
     </span>`;
   }
 
+  // Serie del reverso sacada del número de cédula: cada cédula tiene la suya, sin repetirse
+  const serialOf = (ced) => `PRP${String(ced).split('-').map((x, i) => (/^\d+$/.test(x) ? x.padStart([2, 4, 6][i] || 1, '0') : x)).join('')}`;
+
   function idBack(c) {
-    const serial = `${String(Math.floor(rng(c.cedula)() * 9e7) + 1e7)}`;
     return `<span class="pn-id pn-face-b">
       ${idWindow('b')}
-      <span class="pn-idb-serial">PRP${serial}</span>
+      <span class="pn-idb-serial">${esc(serialOf(c.cedula))}</span>
       <small class="pn-idb-note">Documento de rol de Panamá RP. Sin validez oficial.</small>
       <span class="pn-codes">${code2d(`${c.cedula}a`)}${code2d(`${c.cedula}b`)}</span>
       <span class="pn-mrz">${mrz(c)}</span>
