@@ -210,3 +210,41 @@ test('vincular Roblox: código en la descripción', async () => {
   assert.equal(hasCode('', code), false);
 });
 
+
+test('concesionario e inmobiliaria: se paga con el banco y el carro queda con placa', async () => {
+  const M = await import('../lib/market.js');
+  const db = await fresh();
+  await citizen(db, ANA);
+  const cat = await M.listCatalog(db, NOW);
+  assert.ok(cat.some((x) => x.tipo === 'vehiculo') && cat.some((x) => x.tipo === 'casa'));
+  const moto = cat.find((x) => x.nombre === 'Moto deportiva');
+  await rejects(() => M.buy(db, ANA.id, { id: moto.id }, { now: NOW }), 400, /color/);
+  await rejects(() => M.buy(db, ANA.id, { id: cat.find((x) => x.nombre === 'Mansión').id }, { now: NOW }), 400, /suficiente/);
+  await db.run('UPDATE accounts SET banco = 200000 WHERE discord_id = $1', [ANA.id]);
+  const r = await M.buy(db, ANA.id, { id: moto.id, color: 'Rojo' }, { now: NOW });
+  assert.match(r.bought.placa, /^[A-Z]{2}\d{4}$/);
+  assert.equal(r.account.banco, 200000 - moto.precio);
+  const casa = await M.buy(db, ANA.id, { id: cat.find((x) => x.tipo === 'casa').id }, { now: NOW });
+  assert.match(casa.bought.direccion, /calle/);
+  const mine = await M.myAssets(db, ANA.id);
+  assert.equal(mine.vehicles.length, 1);
+  assert.equal(mine.properties.length, 1);
+  // placa repetida: genera otra
+  let i = 0;
+  const seq = [0, 0, 0, 0, 0, 0, 1, 2, 3];
+  const r2 = await M.buy(db, ANA.id, { id: moto.id, color: 'Azul' }, { now: NOW, randomInt: () => seq[i++ % seq.length] });
+  assert.notEqual(r2.bought.placa, r.bought.placa);
+
+  // la Policía o la ATT la encuentran por la placa y ven su ficha
+  const ATT = { id: '1009', name: 'att' };
+  await citizen(db, ATT, { nombre: 'Tito', apellidos: 'Tránsito' }, 0.91);
+  await P.startShift(db, ATT.id, 'transito', { jobs: JOBS, allowed: ['transito'], now: NOW });
+  const found = await P.searchCitizens(db, ATT.id, r.bought.placa.toLowerCase());
+  assert.equal(found.length, 1);
+  assert.ok(found[0].placas.includes(r.bought.placa));
+  const rec = await P.citizenRecord(db, ATT.id, found[0].cedula);
+  assert.equal(rec.vehiculos.length, 2);
+  assert.equal(rec.propiedades.length, 1);
+  assert.equal(rec.persona.discord_id, undefined, 'no expone el ID de Discord');
+  await rejects(() => P.citizenRecord(db, ANA.id, found[0].cedula), 403);
+});

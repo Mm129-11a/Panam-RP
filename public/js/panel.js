@@ -18,6 +18,10 @@
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
     power: '<path d="M12 3v9"/><path d="M6.3 7.5a8 8 0 1 0 11.4 0"/>',
     bank: '<path d="M3 10 12 4l9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18"/>',
+    car: '<path d="M5 16V11l2-5h10l2 5v5"/><path d="M3 16h18v3H3z"/><circle cx="7.5" cy="13.5" r="1"/><circle cx="16.5" cy="13.5" r="1"/>',
+    home: '<path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
+    store: '<path d="M4 9h16l-1-5H5z"/><path d="M5 9v11h14V9"/><path d="M9 20v-5h6v5"/>',
+    db: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>',
     book: '<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/>',
     shield: '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
@@ -43,7 +47,7 @@
   const head = $('#pn-head');
   const main = $('#pn-main');
   let S = null;
-  const ui = { tab: 'info', work: 'historial', search: null, activity: null, busy: false, flip: false, link: null };
+  const ui = { tab: 'info', work: 'historial', search: null, activity: null, busy: false, flip: false, link: null, shop: null, shopTab: 'vehiculo' };
 
   // ─── Utilidades ───
   let toastT = 0;
@@ -88,6 +92,7 @@
     perfil: () => ['Mi perfil', 'Identidad IC, cuenta y expediente'],
     trabajos: () => [`Panel de turnos <em>${esc(handle())}</em>`, 'Inicia tu turno al entrar al servidor y cobra al terminar'],
     banco: () => [`Banco, <em>${esc(handle())}</em>`, 'Depósitos, retiros, transferencias y movimientos'],
+    tienda: () => ['Concesionario e <em>inmobiliaria</em>', 'Compra carros y casas con el dinero de tu banco'],
   };
   function renderHead(view) {
     const [title, sub] = TITLES[view]();
@@ -126,14 +131,15 @@
   }
 
   // ─── Pantallas (#inicio, #perfil, #trabajos, #banco) ───
-  const VIEWS = ['inicio', 'perfil', 'trabajos', 'banco'];
+  const VIEWS = ['inicio', 'perfil', 'trabajos', 'banco', 'tienda'];
   const currentView = () => { const h = location.hash.slice(1); return VIEWS.includes(h) ? h : 'inicio'; };
 
   function render() {
     const view = currentView();
     renderHead(view);
     const banner = S.modo === 'prueba' ? `<div class="pn-note warn">${ico('alert')}<div>Modo de prueba: falta la base de datos y lo que hagas aquí se borra al reiniciar la web.</div></div>` : '';
-    main.innerHTML = banner + ({ perfil: viewPerfil, trabajos: viewTrabajos, banco: viewBanco }[view] || viewInicio)();
+    main.innerHTML = banner + ({ perfil: viewPerfil, trabajos: viewTrabajos, banco: viewBanco, tienda: viewTienda }[view] || viewInicio)();
+    if (view === 'tienda' && !ui.shop) loadShop();
     $$('[data-color]').forEach((el) => el.style.setProperty('--job', el.dataset.color));
     tick();
     if (view === 'trabajos' && ['policia', 'transito'].includes(S.shift?.job) && !ui.activity) loadActivity();
@@ -161,6 +167,7 @@
         ${cat('#perfil', 'green', 'user', 'Mi perfil', 'Cédula, banco, multas y antecedentes')}
         ${cat('#trabajos', 'blue', 'power', 'Servicio Trabajos', 'Prende turno y gana dinero IC')}
         ${cat('#banco', 'gold', 'bank', 'Banco', 'Depósitos, retiros y transferencias')}
+        ${cat('#tienda', 'purple', 'store', 'Carros y casas', 'Concesionario e inmobiliaria')}
         ${cat('/#normativa', 'red', 'book', 'Normativa', 'Reglas del servidor')}
       </div>`;
   }
@@ -456,8 +463,8 @@
     const unit = S.jobs.includes('transito') && !S.jobs.includes('policia') ? 'ATT' : S.jobs.includes('policia') && !S.jobs.includes('transito') ? 'Policía' : 'Policía o ATT';
     const results = ui.search === null ? '' : ui.search.length ? `<ul class="pn-list">${ui.search.map((p) => `<li><span class="pn-li-ico blue">${ico('user')}</span>
         <div><b>${esc(p.nombre)} ${esc(p.apellidos)}</b><small>${esc(p.cedula)} · ${esc(isoBonito(p.nacimiento))} · ${esc(p.nacionalidad)} · Roblox: ${esc(p.roblox_name)}</small>
-        <small>${p.multas ? `<span class="pn-tag bad">${p.multas} multa(s) pendiente(s)</span>` : '<span class="pn-tag ok">Sin multas</span>'} ${p.arrestos ? `<span class="pn-tag">${p.arrestos} arresto(s)</span>` : ''}</small></div>
-        <div class="pn-li-r col">${att ? `<button class="pn-btn gold sm" type="button" data-act="usar" data-cedula="${esc(p.cedula)}" data-to="multa">Multar</button>` : ''}
+        <small>${p.multas ? `<span class="pn-tag bad">${p.multas} multa(s) pendiente(s)</span>` : '<span class="pn-tag ok">Sin multas</span>'} ${p.arrestos ? `<span class="pn-tag">${p.arrestos} arresto(s)</span>` : ''} ${(p.placas || []).map((x) => `<span class="pn-plate sm">${esc(x)}</span>`).join(' ')}</small></div>
+        <div class="pn-li-r col"><button class="pn-btn blue sm" type="button" data-act="ficha" data-cedula="${esc(p.cedula)}">Ver ficha</button>${att ? `<button class="pn-btn gold sm" type="button" data-act="usar" data-cedula="${esc(p.cedula)}" data-to="multa">Multar</button>` : ''}
         ${poli ? `<button class="pn-btn ghost sm" type="button" data-act="usar" data-cedula="${esc(p.cedula)}" data-to="arresto">Arrestar</button>` : ''}</div></li>`).join('')}</ul>`
       : empty('search', 'No se encontró a nadie');
     const act = ui.activity;
@@ -471,7 +478,7 @@
       ${duty ? '' : `<div class="pn-note warn">${ico('alert')}<div>Inicia tu turno de <b>${unit}</b> para usar estas herramientas.</div></div>`}
       <fieldset ${duty ? '' : 'disabled'}>
         <form data-form="buscar" class="pn-search" novalidate>${ico('search')}
-          <input class="ap-input" name="q" maxlength="40" placeholder="Buscar por nombre, cédula o usuario de Roblox" autocomplete="off" aria-label="Buscar ciudadano">
+          <input class="ap-input" name="q" maxlength="40" placeholder="Nombre, cédula, usuario de Roblox o placa" autocomplete="off" aria-label="Buscar ciudadano">
           <button class="pn-btn gold" type="submit">Buscar</button>
         </form>
         ${results}
@@ -523,6 +530,68 @@
         <section class="pn-box">${transferForm()}</section>
       </div>
       <section class="pn-box"><h3 class="pn-h3">Movimientos</h3>${txList(S.transactions)}</section>`;
+  }
+
+  // ─── Concesionario e inmobiliaria ───
+  async function loadShop() {
+    try { ui.shop = await api('/api/panel/tienda'); } catch (e) { ui.shop = { error: e.error }; }
+    if (currentView() === 'tienda') render();
+  }
+  function viewTienda() {
+    if (!S.account) return `<div class="pn-note info">${ico('id')}<div><b>Necesitas tu cédula</b> para comprar (se paga con tu banco).</div><a class="pn-btn gold" href="#perfil">Crear cédula</a></div>`;
+    const sh = ui.shop;
+    if (!sh) return '<div class="pn-loading"><span class="pn-spin" aria-hidden="true"></span>Cargando…</div>';
+    if (sh.error) return `<div class="pn-note warn">${ico('alert')}<div>${esc(sh.error)}</div><button class="pn-btn gold" type="button" data-act="tienda-recargar">Reintentar</button></div>`;
+    const tabs = [['vehiculo', 'car', 'Concesionario', 'Carros y motos'], ['casa', 'home', 'Inmobiliaria', 'Casas y locales'], ['mios', 'id', 'Mis bienes', `${sh.mine.vehicles.length} vehículo(s) · ${sh.mine.properties.length} propiedad(es)`]];
+    const head = `<div class="pn-bank">
+        <div class="pn-bal main"><span>${ico('bank')}</span><small>Saldo en el banco</small><b>${money(S.account.banco)}</b></div>
+        <div class="pn-bal"><span>${ico('car')}</span><small>Mis vehículos</small><b>${sh.mine.vehicles.length}</b></div>
+        <div class="pn-bal"><span>${ico('home')}</span><small>Mis propiedades</small><b>${sh.mine.properties.length}</b></div>
+      </div>
+      <div class="pn-bigtabs three">${tabs.map(([k, i, t, sub]) => `<button type="button" class="${ui.shopTab === k ? 'on' : ''}" data-act="tienda-tab" data-tab="${k}">${ico(i)}<span><b>${t}</b><small>${esc(sub)}</small></span></button>`).join('')}</div>`;
+    if (ui.shopTab === 'mios') {
+      const v = sh.mine.vehicles.length ? `<ul class="pn-list">${sh.mine.vehicles.map((x) => `<li><span class="pn-li-ico blue">${ico('car')}</span><div><b>${esc(x.modelo)}</b><small>${esc(x.color)} · desde ${fecha(x.created_at)}</small></div><div class="pn-li-r"><span class="pn-plate">${esc(x.placa)}</span></div></li>`).join('')}</ul>` : empty('car', 'Aún no tienes vehículos');
+      const p = sh.mine.properties.length ? `<ul class="pn-list">${sh.mine.properties.map((x) => `<li><span class="pn-li-ico green">${ico('home')}</span><div><b>${esc(x.nombre)}</b><small>${esc(x.direccion)} · desde ${fecha(x.created_at)}</small></div><div class="pn-li-r"><b>${money(x.precio)}</b></div></li>`).join('')}</ul>` : empty('home', 'Aún no tienes propiedades');
+      return `${head}<div class="pn-two"><section class="pn-box"><h3 class="pn-h3">Mis vehículos</h3>${v}</section><section class="pn-box"><h3 class="pn-h3">Mis propiedades</h3>${p}</section></div>`;
+    }
+    const items = sh.catalog.filter((x) => x.tipo === ui.shopTab);
+    const colors = sh.colors.map((c) => `<option>${esc(c)}</option>`).join('');
+    return `${head}<div class="pn-shop">${items.map((x) => {
+      const can = S.account.banco >= x.precio;
+      return `<form class="pn-item" data-form="comprar" novalidate>
+        <input type="hidden" name="id" value="${x.id}">
+        <span class="pn-item-ico ${x.tipo === 'vehiculo' ? 'blue' : 'green'}">${ico(x.tipo === 'vehiculo' ? 'car' : 'home')}</span>
+        <b>${esc(x.nombre)}</b><small>${esc(x.detalle || '')}</small>
+        <strong>${money(x.precio)}</strong>
+        ${x.tipo === 'vehiculo' ? `<div class="ap-select"><select class="ap-input" name="color" aria-label="Color" required><option value="">Color…</option>${colors}</select></div>` : ''}
+        <button class="pn-btn ${can ? 'gold' : 'ghost'}" type="submit" ${can ? '' : 'disabled'}>${can ? 'Comprar' : 'Saldo insuficiente'}</button>
+      </form>`;
+    }).join('')}</div>`;
+  }
+
+  // ─── Ficha de la base de datos (Policía / ATT) ───
+  async function openFicha(cedula) {
+    const r = await api(`/api/panel/policia/ficha?cedula=${encodeURIComponent(cedula)}`);
+    const p = r.persona;
+    const list = (rows, fn, none) => (rows.length ? `<ul class="pn-list">${rows.map(fn).join('')}</ul>` : `<p class="pn-muted">${none}</p>`);
+    const LIC = { conducir: 'Conducir', armas: 'Armas' };
+    $('#pn-modal-body').innerHTML = `<div class="pn-ficha">
+      <div class="pn-ficha-top">
+        <span class="pn-ava id"><span>${esc(p.nombre.charAt(0))}</span>${r.avatar ? `<img src="${esc(r.avatar)}" alt="" data-rbx>` : ''}</span>
+        <div><small>REGISTRO NACIONAL · PANAMÁ RP</small><b>${esc(p.nombre)} ${esc(p.apellidos)}</b>
+          <span class="mono">${esc(p.cedula)}</span>
+          <em>${esc(isoBonito(p.nacimiento))} · ${edad(p.nacimiento)} años · ${esc(p.genero)} · Sangre ${esc(p.sangre)}${p.estatura ? ` · ${p.estatura} cm` : ''}</em>
+          <em>${esc(p.nacionalidad)} · Roblox: ${esc(p.roblox_name)}</em></div>
+      </div>
+      <h4 class="pn-h4">${ico('id')}Licencias</h4>${r.licencias.length ? `<p>${r.licencias.map((l) => `<span class="pn-tag ok">${esc(LIC[l.tipo] || l.tipo)}</span>`).join(' ')}</p>` : '<p class="pn-muted">Sin licencias</p>'}
+      <h4 class="pn-h4">${ico('car')}Vehículos</h4>${list(r.vehiculos, (v) => `<li><span class="pn-plate">${esc(v.placa)}</span><div><b>${esc(v.marca === 'Concesionario' ? v.modelo : `${v.marca} ${v.modelo}`)}</b><small>${esc(v.color)}</small></div></li>`, 'Sin vehículos registrados')}
+      <h4 class="pn-h4">${ico('home')}Propiedades</h4>${list(r.propiedades, (x) => `<li><div><b>${esc(x.nombre)}</b><small>${esc(x.direccion)}</small></div></li>`, 'Sin propiedades')}
+      <h4 class="pn-h4">${ico('receipt')}Multas</h4>${list(r.multas, (f) => `<li><div><b>${esc(f.motivo)}</b><small>${esc(f.officer_name)} · ${fechaHora(f.created_at)}${f.matricula ? ` · placa ${esc(f.matricula)}` : ''}</small></div><div class="pn-li-r"><span class="pn-tag ${f.estado === 'pendiente' ? 'bad' : 'ok'}">${f.estado}</span><b>${money(f.monto)}</b></div></li>`, 'Sin multas')}
+      <h4 class="pn-h4">${ico('gavel')}Antecedentes</h4>${list(r.antecedentes, (a) => `<li><div><b>${a.tipo === 'antecedente' ? 'Antecedente' : 'Arresto'} · ${esc(a.cargos)}</b><small>${esc(a.officer_name)} · ${fechaHora(a.created_at)}${a.sentencia ? ` · ${esc(a.sentencia)}` : ''}</small></div>${a.tipo === 'antecedente' ? '' : `<div class="pn-li-r"><span class="pn-tag">${a.minutos} min</span></div>`}</li>`, 'Sin antecedentes')}
+      <div class="pn-row"><button class="pn-btn ghost" type="button" data-act="cerrar">Cerrar</button></div>
+    </div>`;
+    modal.classList.remove('hidden');
+    document.body.classList.add('pn-noscroll');
   }
 
   const moverForm = (tipo) => `<form data-form="mover" novalidate>
@@ -623,6 +692,11 @@
         closeModal();
         toast(`Enviaste ${money(f.monto)} a ${r.to}`);
         await refresh();
+      } else if (kind === 'comprar') {
+        const r = await api('/api/panel/tienda/comprar', { id: Number(f.id), color: f.color });
+        toast(r.bought.tipo === 'vehiculo' ? `¡Compraste ${r.bought.nombre}! Placa ${r.bought.placa}` : `¡Compraste ${r.bought.nombre}! ${r.bought.direccion}`);
+        ui.shop = null; ui.shopTab = 'mios';
+        await refresh();
       } else if (kind === 'buscar') {
         ui.search = (await api(`/api/panel/policia/buscar?q=${encodeURIComponent(f.q || '')}`)).results;
         render();
@@ -651,6 +725,8 @@
     if (act === 'modal') return openModal(b.dataset.m);
     if (act === 'tab') { ui.tab = b.dataset.tab; render(); if (b.classList.contains('pn-short')) $('#pn-exp')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     if (act === 'work') { ui.work = b.dataset.tab; render(); return; }
+    if (act === 'tienda-tab') { ui.shopTab = b.dataset.tab; render(); return; }
+    if (act === 'tienda-recargar') { ui.shop = null; render(); return; }
     if (act === 'copiar') { navigator.clipboard?.writeText(ui.link?.code || '').then(() => toast('Código copiado'), () => toast('Mantén presionado el código para copiarlo')); return; }
     if (act === 'otro-usuario') { ui.link = null; render(); return; }
     if (act === 'girar') { ui.flip = !ui.flip; b.classList.toggle('flip', ui.flip); return; }
@@ -679,6 +755,8 @@
         ui.link = null;
         toast(`¡Roblox vinculado: ${r.user.name}!`);
         await refresh();
+      } else if (act === 'ficha') {
+        await openFicha(b.dataset.cedula);
       } else if (act === 'pagar') {
         await api('/api/panel/multas/pagar', { id: Number(b.dataset.id) });
         toast('Multa pagada.');

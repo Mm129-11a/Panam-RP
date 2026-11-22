@@ -21,6 +21,7 @@ import { configureJobs, jobsFor, publicJobs, SHIFT } from './lib/jobs.js';
 import * as panel from './lib/panel.js';
 import { buildCommands, COMMAND_LIST, COMMAND_NAMES, handleCommand, sameCommands } from './lib/commands.js';
 import { startGateway } from './lib/gateway.js';
+import * as market from './lib/market.js';
 import { OLD_NAMES, COMPONENT_RE, commandModal, componentModal, autocomplete as oldAutocomplete, runOld, runComponent, housekeeping, getCfg as botCfg } from './lib/oldbot.js';
 import { JUSTICE_RE, justiceModal, runJustice } from './lib/justicia.js';
 import { createErlc } from './lib/erlc.js';
@@ -88,7 +89,7 @@ const ipOf = (req) => {
   return ip;
 };
 app.use(securityHeaders({ https: HTTPS }));
-const PANEL_POSTS = ['/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/policia/multa', '/policia/arresto'];
+const PANEL_POSTS = ['/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/policia/multa', '/policia/arresto', '/tienda/comprar'];
 app.use(methodGuard(['/logout', '/api/solicitud', '/api/discord/interactions', '/api/roblox/vincular', '/api/roblox/comprobar', ...PANEL_POSTS.map((p) => `/api/panel${p}`)]));
 app.use(rateLimit({ windowMs: 60_000, max: 300, keyFn: ipOf }));
 
@@ -944,6 +945,20 @@ app.get('/api/panel/policia/buscar', panelLimit, panelRoute(async ({ user, db: d
   if (!jobs.includes('policia') && !jobs.includes('transito')) throw new panel.PanelError(403, 'No tienes el rol de Policía ni de ATT.');
   return { results: await panel.searchCitizens(d, user.id, req.query.q) };
 }));
+// Ficha completa (base de datos): Policía o ATT en turno
+app.get('/api/panel/policia/ficha', panelLimit, panelRoute(async ({ user, db: d, jobs }, req) => {
+  if (!jobs.includes('policia') && !jobs.includes('transito')) throw new panel.PanelError(403, 'No tienes el rol de Policía ni de ATT.');
+  const rec = await panel.citizenRecord(d, user.id, req.query.cedula);
+  const avatar = rec.persona.roblox_name ? (await lookupRoblox(rec.persona.roblox_name).catch(() => null))?.avatar || null : null;
+  return { ...rec, avatar };
+}));
+
+// Concesionario e inmobiliaria
+app.get('/api/panel/tienda', panelLimit, panelRoute(async ({ user, db: d }) => ({
+  catalog: await market.listCatalog(d), mine: await market.myAssets(d, user.id), colors: market.COLORS,
+})));
+post('/tienda/comprar', async ({ user, db: d }, req) => market.buy(d, user.id, { id: req.body?.id, color: req.body?.color }));
+
 app.get('/api/panel/policia/actividad', panelLimit, panelRoute(async ({ user, db: d, jobs }) => {
   if (!jobs.includes('policia') && !jobs.includes('transito')) throw new panel.PanelError(403, 'No tienes el rol de Policía ni de ATT.');
   return panel.officerActivity(d, user.id);
@@ -995,7 +1010,7 @@ app.listen(PORT, () => {
   if (BOT_TOKEN_RAW && !BOT_TOKEN) console.log('DISCORD_BOT_TOKEN no tiene el formato de un token de bot.');
   if (process.env.DISCORD_PUBLIC_KEY && !PUBLIC_KEY) console.log('DISCORD_PUBLIC_KEY no es válida (deben ser 64 caracteres).');
   console.log(DISCORD_MODE === 'gateway'
-    ? 'Comandos y botones: por el gateway (el bot viejo sigue con sus comandos)'
+    ? 'Comandos y botones: por el gateway (la web contesta los 41 de antes y los nuevos)'
     : `Comandos y botones: por la Interactions Endpoint URL ${BASE_URL}/api/discord/interactions`);
   console.log(`Rol al aceptar: ${WHITELIST_ROLE || 'ninguno (falta WHITELIST_ROLE)'}`);
   getDb();
