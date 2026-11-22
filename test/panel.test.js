@@ -210,27 +210,27 @@ test('vincular Roblox: código en la descripción', async () => {
 });
 
 
-test('concesionario e inmobiliaria: se paga con el banco y el carro queda con placa', async () => {
+test('inmobiliaria: se paga con el banco; ya no hay concesionario (los carros son los del bot)', async () => {
   const M = await import('../lib/market.js');
   const db = await fresh();
   await citizen(db, ANA);
   assert.equal((await M.listCatalog(db)).length, 0, 'empieza vacío: lo llenan los admins');
   await rejects(() => M.saveItem(db, { tipo: 'avion', nombre: 'x', precio: -1 }), 400);
-  await M.saveItem(db, { tipo: 'vehiculo', nombre: 'Moto deportiva', detalle: 'Rápida', precio: 12000, stock: '' }, NOW);
-  await M.saveItem(db, { tipo: 'casa', nombre: 'Mansión', precio: 650000 }, NOW);
+  await rejects(() => M.saveItem(db, { tipo: 'vehiculo', nombre: 'Moto deportiva', precio: 12000 }), 400);
+  // un carro que quedó del concesionario de antes: no sale ni se puede comprar
+  const old = await db.one("INSERT INTO catalog (tipo, nombre, precio, created_at) VALUES ('vehiculo', 'Sedán viejo', 1000, $1) RETURNING id", [NOW]);
+  await M.saveItem(db, { tipo: 'casa', nombre: 'Mansión', precio: 650000, stock: '' }, NOW);
   await M.saveItem(db, { tipo: 'casa', nombre: 'Casa en la playa', precio: 180000, stock: 1 }, NOW);
   const cat = await M.listCatalog(db);
-  const moto = cat.find((x) => x.nombre === 'Moto deportiva');
-  assert.equal(moto.stock, null, 'vacío = sin límite');
-  await rejects(() => M.buy(db, ANA.id, { id: moto.id }, { now: NOW }), 400, /color/);
+  assert.deepEqual(cat.map((x) => x.tipo), ['casa', 'casa']);
+  assert.equal(cat.find((x) => x.nombre === 'Mansión').stock, null, 'vacío = sin límite');
+  await rejects(() => M.buy(db, ANA.id, { id: old.id }, { now: NOW }), 404);
   await rejects(() => M.buy(db, ANA.id, { id: cat.find((x) => x.nombre === 'Mansión').id }, { now: NOW }), 400, /suficiente/);
   await db.run('UPDATE accounts SET banco = 500000 WHERE discord_id = $1', [ANA.id]);
-  const r = await M.buy(db, ANA.id, { id: moto.id, color: 'Rojo' }, { now: NOW });
-  assert.match(r.bought.placa, /^[A-Z]{2}\d{4}$/);
-  assert.equal(r.account.banco, 500000 - moto.precio);
   const playa = cat.find((x) => x.nombre === 'Casa en la playa');
   const casa = await M.buy(db, ANA.id, { id: playa.id }, { now: NOW });
   assert.match(casa.bought.direccion, /calle/);
+  assert.equal(casa.account.banco, 500000 - playa.precio);
   assert.equal((await M.listCatalog(db)).find((x) => x.id === playa.id).stock, 0, 'baja el stock');
   await rejects(() => M.buy(db, ANA.id, { id: playa.id }, { now: NOW }), 409, /agotó/);
   // foto: solo imágenes de verdad
@@ -241,14 +241,14 @@ test('concesionario e inmobiliaria: se paga con el banco y el carro queda con pl
   assert.equal((await M.getImage(db, playa.id)).mime, 'image/png');
   await M.removeItem(db, playa.id);
   assert.equal((await M.listCatalog(db)).some((x) => x.id === playa.id), false);
+  // carros: los que registró con /vehiculo registrar del bot
+  for (const [placa, modelo] of [['AB1234', 'Hilux'], ['CD-567', 'Civic']]) {
+    await db.run("INSERT INTO vehicles (placa, discord_id, marca, modelo, color, created_at) VALUES ($1, $2, 'Toyota', $3, 'Rojo', $4)", [placa, ANA.id, modelo, NOW]);
+  }
   const mine = await M.myAssets(db, ANA.id);
-  assert.equal(mine.vehicles.length, 1);
+  assert.equal(mine.vehicles.length, 2);
   assert.equal(mine.properties.length, 1);
-  // placa repetida: genera otra
-  let i = 0;
-  const seq = [0, 0, 0, 0, 0, 0, 1, 2, 3];
-  const r2 = await M.buy(db, ANA.id, { id: moto.id, color: 'Azul' }, { now: NOW, randomInt: () => seq[i++ % seq.length] });
-  assert.notEqual(r2.bought.placa, r.bought.placa);
+  const r = { bought: { placa: 'AB1234' } };
 
   // la Policía o la ATT la encuentran por la placa y ven su ficha
   const ATT = { id: '1009', name: 'att' };

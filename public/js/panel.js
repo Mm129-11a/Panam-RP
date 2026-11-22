@@ -49,7 +49,7 @@
   const head = $('#pn-head');
   const main = $('#pn-main');
   let S = null;
-  const ui = { negro: null, tab: 'info', work: 'historial', search: null, activity: null, busy: false, flip: false, link: null, shop: null, shopTab: 'vehiculo', just: null, denTipo: null, adm: 'datos', admSearch: null, admCases: null, admCat: null, edit: null, photo: null };
+  const ui = { negro: null, tab: 'info', work: 'historial', search: null, activity: null, busy: false, flip: false, link: null, shop: null, shopTab: 'casa', just: null, denTipo: null, adm: 'datos', admSearch: null, admCases: null, admCat: null, edit: null, photo: null };
 
   // ─── Utilidades ───
   let toastT = 0;
@@ -96,10 +96,10 @@
     perfil: () => ['Mi perfil', 'Identidad IC, cuenta y expediente'],
     trabajos: () => [`Panel de turnos <em>${esc(handle())}</em>`, 'Inicia tu turno al entrar al servidor y termínalo al salir'],
     banco: () => [`Banco, <em>${esc(handle())}</em>`, 'Depósitos, retiros, transferencias y movimientos'],
-    tienda: () => ['Concesionario e <em>inmobiliaria</em>', 'Compra carros y casas con el dinero de tu banco'],
+    tienda: () => ['Casas y <em>mis carros</em>', 'Compra casas con tu banco. Tus carros son los que registras con /vehiculo en el bot'],
     justicia: () => ['Denuncias y <em>juicios</em>', 'Lo que mandes les llega por mensaje privado a los jueces'],
     negro: () => ['Mercado negro', 'Pagas en efectivo y nadie se entera'],
-    admin: () => ['<em>Administración</em>', S.staff?.admin ? 'Admins: stock de carros y casas, base de datos y casos' : 'Moderadores: base de datos y casos'],
+    admin: () => ['<em>Administración</em>', S.staff?.admin ? 'Admins: stock de casas y mercado negro, base de datos y casos' : 'Moderadores: base de datos y casos'],
   };
   function renderHead(view) {
     const [title, sub] = TITLES[view]();
@@ -177,7 +177,7 @@
         ${cat('#perfil', 'green', 'user', 'Mi perfil', 'Cédula, banco, multas y antecedentes')}
         ${hasWork() ? cat('#trabajos', 'blue', 'power', 'Servicio Trabajos', S.jobs.length === 1 ? `Tu trabajo: ${jobInfo(S.jobs[0]).name}` : 'Inicia y termina tus turnos') : ''}
         ${cat('#banco', 'gold', 'bank', 'Banco', 'Depósitos, retiros y transferencias')}
-        ${cat('#tienda', 'purple', 'store', 'Carros y casas', 'Concesionario e inmobiliaria')}
+        ${cat('#tienda', 'purple', 'home', 'Casas y mis carros', 'Inmobiliaria y tus vehículos')}
         ${cat('#negro', 'dark', 'mask', 'Mercado negro', 'Se paga en efectivo')}
         ${cat('#justicia', 'cyan', 'scale', 'Justicia', 'Denuncias y juicios')}
         ${S.staff?.mod ? cat('#admin', 'rose', 'shield', 'Administración', S.staff.admin ? 'Stock, base de datos y casos' : 'Base de datos y casos') : ''}
@@ -429,20 +429,21 @@
     if (!S.character) {
       controls = `<a class="pn-btn gold" href="#perfil">Crea tu cédula para trabajar</a>`;
     } else if (on) {
-      controls = `<button class="pn-btn red lg" type="button" data-act="terminar">${ico('power')}Terminar turno</button>`;
-    } else if (S.jobs.length === 1) {
-      const only = jobInfo(S.jobs[0]);
-      controls = `<button class="pn-btn gold lg" type="button" data-act="iniciar" data-job="${esc(S.jobs[0])}">${ico('power')}Iniciar turno · ${only.icon} ${esc(only.name)}</button>`;
+      controls = `<div class="pn-row"><button class="pn-btn red lg" type="button" data-act="terminar">${ico('power')}Terminar turno</button>${payTag(on.job)}</div>`;
     } else {
-      controls = `<div class="pn-pick"><div class="ap-select"><select class="ap-input" id="pn-job" aria-label="Trabajo">${S.jobs.map((k) => `<option value="${esc(k)}">${jobInfo(k).icon} ${esc(jobInfo(k).name)}</option>`).join('')}</select></div>
-        <button class="pn-btn gold lg" type="button" data-act="iniciar">${ico('power')}Iniciar turno</button></div>`;
+      // Un botón por trabajo, cada uno con su color y lo que gana (si un admin lo puso con /salario-configurar)
+      controls = `<div class="pn-jobbtns">${S.jobs.map((k) => {
+        const jj = jobInfo(k);
+        return `<button class="pn-jobbtn" type="button" data-act="iniciar" data-job="${esc(k)}" data-color="${esc(jj.color)}">
+          <span class="pn-jobbtn-ico">${jj.icon}</span><span><b>${esc(jj.name)}</b><small>${ico('power')}Iniciar turno</small></span>${payTag(k)}</button>`;
+      }).join('')}</div>`;
     }
     const r = S.shiftRules;
     return `<section class="pn-work" ${j ? `data-color="${esc(j.color)}"` : ''}>
         <div class="pn-work-main">
           <span class="pn-state ${on ? 'on' : ''}"><i></i>${on ? `En servicio · ${esc(j.name)}` : 'Fuera de servicio'}</span>
           <h2>Panel de <em>trabajo</em></h2>
-          <p>${S.jobs.length > 1 ? 'Elige tu trabajo y toca' : 'Toca'} <b>Iniciar turno</b> cuando entres al servidor de ER:LC. Al salir, toca <b>Terminar turno</b> y tu tiempo queda registrado. Necesitas el rol del trabajo en Discord.</p>
+          <p>Toca ${S.jobs.length > 1 ? 'el botón de tu trabajo' : 'tu trabajo'} cuando entres al servidor de ER:LC. Al salir, toca <b>Terminar turno</b> y tu tiempo queda registrado. El sueldo se cobra con <b>/cobrar-salario</b> en el bot.</p>
           ${controls}
         </div>
         <div class="pn-work-side">
@@ -456,6 +457,12 @@
       </div>
       ${ui.work === 'ranking' ? ranking() : historial()}
       ${[...POLICE, 'transito'].includes(S.shift?.job) ? policeTools() : ''}`;
+  }
+
+  // Lo que gana un trabajo (del bot: /salario-configurar)
+  function payTag(k) {
+    const p = S.pay?.[k];
+    return p ? `<span class="pn-pay ${p.monto < 0 ? 'neg' : ''}">${p.monto < 0 ? '−' : '+'}${money(Math.abs(p.monto))}<small>cada ${p.cooldown_h} h</small></span>` : '';
   }
 
   function historial() {
@@ -546,37 +553,52 @@
         <div class="pn-bal"><span>${ico('cash')}</span><small>Efectivo</small><b>${money(S.account.efectivo)}</b></div>
         <div class="pn-bal"><span>${ico('alert')}</span><small>Multas pendientes</small><b class="${owed() ? 'neg' : ''}">${money(owed())}</b></div>
       </div>
+      ${sueldos()}
       <div class="pn-two">
         <section class="pn-box">${moverForm()}</section>
         <section class="pn-box">${transferForm()}</section>
       </div>
       <section class="pn-box"><h3 class="pn-h3">Movimientos</h3>${txList(S.transactions)}</section>`;
   }
+  function sueldos() {
+    const list = S.sueldos || [];
+    if (!list.length) return '';
+    return `<section class="pn-box"><h3 class="pn-h3">Lo que ganas</h3><p class="pn-muted">Según tus roles. Se cobra en el bot con <b>/cobrar-salario</b>.</p>
+      <ul class="pn-list">${list.map((x) => {
+        return `<li><span class="pn-li-ico job" ${x.job ? `data-color="${esc(jobInfo(x.job).color)}"` : ''}>${x.icon}</span><div><b>${esc(x.name)}</b><small>${x.monto < 0 ? 'Impuesto' : 'Sueldo'} cada ${x.cooldown_h} h</small></div>
+          <div class="pn-li-r"><span class="pn-pay ${x.monto < 0 ? 'neg' : ''}">${x.monto < 0 ? '−' : '+'}${money(Math.abs(x.monto))}</span></div></li>`;
+      }).join('')}</ul></section>`;
+  }
 
-  // ─── Concesionario e inmobiliaria ───
+  // ─── Inmobiliaria y mis carros (los carros salen de /vehiculo registrar del bot) ───
   async function loadShop() {
     try { ui.shop = await api('/api/panel/tienda'); } catch (e) { ui.shop = { error: e.error }; }
     if (currentView() === 'tienda') render();
   }
   function viewTienda() {
-    if (!S.account) return `<div class="pn-note info">${ico('id')}<div><b>Necesitas tu cédula</b> para comprar (se paga con tu banco).</div><a class="pn-btn gold" href="#perfil">Crear cédula</a></div>`;
+    if (!S.account) return `<div class="pn-note info">${ico('id')}<div><b>Necesitas tu cédula</b> para comprar casas (se paga con tu banco).</div><a class="pn-btn gold" href="#perfil">Crear cédula</a></div>`;
     const sh = ui.shop;
+    if (ui.shopTab === 'vehiculo') ui.shopTab = 'casa';
     if (!sh) return '<div class="pn-loading"><span class="pn-spin" aria-hidden="true"></span>Cargando…</div>';
     if (sh.error) return `<div class="pn-note warn">${ico('alert')}<div>${esc(sh.error)}</div><button class="pn-btn gold" type="button" data-act="tienda-recargar">Reintentar</button></div>`;
-    const tabs = [['vehiculo', 'car', 'Concesionario', 'Carros y motos'], ['casa', 'home', 'Inmobiliaria', 'Casas y locales'], ['mios', 'id', 'Mis bienes', `${sh.mine.vehicles.length} vehículo(s) · ${sh.mine.properties.length} propiedad(es)`]];
+    const tabs = [['casa', 'home', 'Inmobiliaria', 'Casas y locales'], ['mios', 'car', 'Mis bienes', `${sh.mine.vehicles.length} carro(s) · ${sh.mine.properties.length} casa(s)`]];
     const head = `<div class="pn-bank">
         <div class="pn-bal main"><span>${ico('bank')}</span><small>Saldo en el banco</small><b>${money(S.account.banco)}</b></div>
-        <div class="pn-bal"><span>${ico('car')}</span><small>Mis vehículos</small><b>${sh.mine.vehicles.length}</b></div>
-        <div class="pn-bal"><span>${ico('home')}</span><small>Mis propiedades</small><b>${sh.mine.properties.length}</b></div>
+        <div class="pn-bal"><span>${ico('car')}</span><small>Mis carros</small><b>${sh.mine.vehicles.length}</b></div>
+        <div class="pn-bal"><span>${ico('home')}</span><small>Mis casas</small><b>${sh.mine.properties.length}</b></div>
       </div>
-      <div class="pn-bigtabs three">${tabs.map(([k, i, t, sub]) => `<button type="button" class="${ui.shopTab === k ? 'on' : ''}" data-act="tienda-tab" data-tab="${k}">${ico(i)}<span><b>${t}</b><small>${esc(sub)}</small></span></button>`).join('')}</div>`;
+      <div class="pn-bigtabs">${tabs.map(([k, i, t, sub]) => `<button type="button" class="${ui.shopTab === k ? 'on' : ''}" data-act="tienda-tab" data-tab="${k}">${ico(i)}<span><b>${t}</b><small>${esc(sub)}</small></span></button>`).join('')}</div>`;
     if (ui.shopTab === 'mios') {
-      const v = sh.mine.vehicles.length ? `<ul class="pn-list">${sh.mine.vehicles.map((x) => `<li><span class="pn-li-ico blue">${ico('car')}</span><div><b>${esc(x.modelo)}</b><small>${esc(x.color)} · desde ${fecha(x.created_at)}</small></div><div class="pn-li-r"><span class="pn-plate">${esc(x.placa)}</span></div></li>`).join('')}</ul>` : empty('car', 'Aún no tienes vehículos');
+      const v = sh.mine.vehicles.length ? `<div class="pn-cars">${sh.mine.vehicles.map((x) => `<article class="pn-car">
+          ${x.imagen ? `<img src="${esc(x.imagen)}" alt="" loading="lazy">` : `<span class="pn-car-ico">${ico('car')}</span>`}
+          <div><b>${esc(x.marca === 'Concesionario' ? x.modelo : `${x.marca} ${x.modelo}`)}</b><small>${esc(x.color)} · desde ${fecha(x.created_at)}</small></div>
+          <span class="pn-plate">${esc(x.placa)}</span></article>`).join('')}</div>`
+        : `<div class="pn-empty soft"><b>Aún no tienes carros</b><p>Regístralo en Discord con <b>/vehiculo registrar</b> y aparece aquí solo.</p></div>`;
       const p = sh.mine.properties.length ? `<ul class="pn-list">${sh.mine.properties.map((x) => `<li><span class="pn-li-ico green">${ico('home')}</span><div><b>${esc(x.nombre)}</b><small>${esc(x.direccion)} · desde ${fecha(x.created_at)}</small></div><div class="pn-li-r"><b>${money(x.precio)}</b></div></li>`).join('')}</ul>` : empty('home', 'Aún no tienes propiedades');
-      return `${head}<div class="pn-two"><section class="pn-box"><h3 class="pn-h3">Mis vehículos</h3>${v}</section><section class="pn-box"><h3 class="pn-h3">Mis propiedades</h3>${p}</section></div>`;
+      return `${head}<div class="pn-two"><section class="pn-box"><h3 class="pn-h3">Mis carros</h3>${v}</section><section class="pn-box"><h3 class="pn-h3">Mis casas</h3>${p}</section></div>`;
     }
     const items = sh.catalog.filter((x) => x.tipo === ui.shopTab);
-    if (!items.length) return `${head}${empty(ui.shopTab === 'casa' ? 'home' : 'car', 'Por ahora no hay nada a la venta aquí. Vuelve pronto.')}`;
+    if (!items.length) return `${head}${empty('home', 'Por ahora no hay casas a la venta. Vuelve pronto.')}`;
     const colors = sh.colors.map((c) => `<option>${esc(c)}</option>`).join('');
     return `${head}<div class="pn-shop">${items.map((x) => {
       const agotado = x.stock !== null && x.stock !== undefined && x.stock <= 0;
@@ -693,7 +715,7 @@
   function viewAdmin() {
     if (!S.staff?.mod) return `<div class="pn-note warn">${ico('alert')}<div>Esta sección es solo para moderadores y admins.</div></div>`;
     if (ui.adm === 'tienda' && !S.staff.admin) ui.adm = 'datos';
-    const tabs = [['datos', 'db', 'Base de datos', 'Buscar ciudadanos'], ['casos', 'scale', 'Casos', 'Denuncias y juicios'], ...(S.staff.admin ? [['tienda', 'store', 'Stock', 'Carros, casas y mercado negro']] : [])];
+    const tabs = [['datos', 'db', 'Base de datos', 'Buscar ciudadanos'], ['casos', 'scale', 'Casos', 'Denuncias y juicios'], ...(S.staff.admin ? [['tienda', 'store', 'Stock', 'Casas y mercado negro']] : [])];
     const head = `<div class="pn-bigtabs ${tabs.length === 3 ? 'three' : ''}">${tabs.map(([k, i, t, sub]) => `<button type="button" class="${ui.adm === k ? 'on' : ''}" data-act="adm-tab" data-tab="${k}">${ico(i)}<span><b>${t}</b><small>${sub}</small></span></button>`).join('')}</div>`;
     if (ui.adm === 'casos') {
       const C = ui.admCases;
@@ -714,12 +736,12 @@
           <h4>${ico(e.id ? 'swap' : 'store')}${e.id ? `Editar #${e.id}` : 'Agregar al stock'}</h4>
           ${e.id ? `<input type="hidden" name="id" value="${e.id}">` : ''}
           <div class="pn-two">
-            ${field('i-tipo', 'Tipo', `<div class="ap-select"><select class="ap-input" id="f-i-tipo" name="tipo" required><option value="vehiculo"${e.tipo !== 'casa' ? ' selected' : ''}>🚗 Carro / moto</option><option value="casa"${e.tipo === 'casa' ? ' selected' : ''}>🏠 Casa / local</option><option value="negro"${e.tipo === 'negro' ? ' selected' : ''}>🕶️ Mercado negro</option></select></div>`)}
-            ${field('i-nombre', 'Nombre', `<input class="ap-input" id="f-i-nombre" name="nombre" maxlength="60" value="${esc(e.nombre || '')}" placeholder="Ej: Toyota Hilux 2024" required>`)}
+            ${field('i-tipo', 'Tipo', `<div class="ap-select"><select class="ap-input" id="f-i-tipo" name="tipo" required><option value="casa"${e.tipo !== 'negro' ? ' selected' : ''}>🏠 Casa / local</option><option value="negro"${e.tipo === 'negro' ? ' selected' : ''}>🕶️ Mercado negro</option></select></div>`)}
+            ${field('i-nombre', 'Nombre', `<input class="ap-input" id="f-i-nombre" name="nombre" maxlength="60" value="${esc(e.nombre || '')}" placeholder="Ej: Casa en Costa del Este" required>`)}
             ${field('i-precio', 'Precio ($)', `<input class="ap-input" id="f-i-precio" name="precio" inputmode="numeric" value="${e.precio ?? ''}" placeholder="Ej: 45000" required>`)}
             ${field('i-stock', 'En stock (vacío = sin límite)', `<input class="ap-input" id="f-i-stock" name="stock" inputmode="numeric" value="${e.stock ?? ''}" placeholder="Ej: 3">`)}
           </div>
-          ${field('i-detalle', 'Descripción', `<input class="ap-input" id="f-i-detalle" name="detalle" maxlength="140" value="${esc(e.detalle || '')}" placeholder="Ej: 4x4, doble cabina">`)}
+          ${field('i-detalle', 'Descripción', `<input class="ap-input" id="f-i-detalle" name="detalle" maxlength="140" value="${esc(e.detalle || '')}" placeholder="Ej: 3 recámaras, piscina">`)}
           <div class="ap-field"><label class="ap-label" for="f-i-foto">Foto</label>
             <div class="pn-photo">${ui.photo ? `<img src="${esc(ui.photo)}" alt="">` : e.imagen ? `<img src="${esc(e.imagen)}" alt="">` : `<span>${ico('store')}</span>`}
               <input class="ap-input" id="f-i-foto" type="file" accept="image/*" data-photo></div><div class="pn-err" data-err="foto"></div></div>
@@ -729,7 +751,7 @@
           ${x.imagen ? `<img class="pn-li-img" src="${esc(x.imagen)}" alt="">` : `<span class="pn-li-ico ${x.tipo === 'vehiculo' ? 'blue' : x.tipo === 'negro' ? 'dark' : 'green'}">${ico(x.tipo === 'vehiculo' ? 'car' : x.tipo === 'negro' ? 'mask' : 'home')}</span>`}
           <div><b>${x.tipo === 'negro' ? '🕶️ ' : ''}${esc(x.nombre)}</b><small>${money(x.precio)} · ${x.stock === null || x.stock === undefined ? 'sin límite' : `stock ${x.stock}`}${x.detalle ? ` · ${esc(x.detalle)}` : ''}</small></div>
           <div class="pn-li-r"><button class="pn-btn ghost sm" type="button" data-act="item-editar" data-id="${x.id}">Editar</button><button class="pn-btn ghost sm" type="button" data-act="item-quitar" data-id="${x.id}">Quitar</button></div></li>`).join('')}</ul>` : empty('store', 'No hay nada en stock');
-      return `${head}<div class="pn-two"><section class="pn-box">${form}</section><section class="pn-box"><h3 class="pn-h3">En venta</h3><p class="pn-muted">Carros, casas y mercado negro. Cada compra les llega por DM a los admins.</p>${list}</section></div>`;
+      return `${head}<div class="pn-two"><section class="pn-box">${form}</section><section class="pn-box"><h3 class="pn-h3">En venta</h3><p class="pn-muted">Casas y mercado negro. Cada compra les llega por DM a los admins.</p>${list}</section></div>`;
     }
     const R = ui.admSearch;
     const results = R === null ? '' : R.length ? `<ul class="pn-list">${R.map((p) => `<li><span class="pn-li-ico blue">${ico('user')}</span>

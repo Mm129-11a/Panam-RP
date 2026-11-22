@@ -588,3 +588,32 @@ a.pn-stat:hover{border-color:#3a4358;transform:translateY(-2px)}
 .pn-kv > span{background:linear-gradient(135deg,#6366f1,#a855f7);color:#fff}
 .pn-kv.ok > span{background:linear-gradient(135deg,#10b981,#0d9488)}
 .pn-kv.bad > span{background:linear-gradient(135deg,#f43f5e,#e11d48)}
+/* Botones de trabajo: cada uno con el color de su trabajo (--job sale de data-color) */
+.pn-jobbtns{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-top:4px}
+.pn-jobbtn{--job:#6366f1;display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border-radius:16px;border:1px solid color-mix(in srgb,var(--job) 55%,transparent);
+  background:linear-gradient(135deg,color-mix(in srgb,var(--job) 34%,#15142b),color-mix(in srgb,var(--job) 12%,#15142b));color:#fff;font:inherit;text-align:left;cursor:pointer;
+  box-shadow:0 10px 24px -14px var(--job);transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
+.pn-jobbtn:hover{transform:translateY(-2px);border-color:var(--job);box-shadow:0 14px 30px -12px var(--job)}
+.pn-jobbtn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.pn-jobbtn:disabled{opacity:.6;cursor:wait;transform:none}
+.pn-jobbtn-ico{display:grid;place-items:center;width:44px;height:44px;flex-shrink:0;border-radius:13px;font-size:22px;background:linear-gradient(135deg,var(--job),color-mix(in srgb,var(--job) 60%,#000))}
+.pn-jobbtn > span:nth-child(2){display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.pn-jobbtn b{font-size:15px;font-weight:700}
+.pn-jobbtn small{display:flex;align-items:center;gap:5px;font-size:12px;color:color-mix(in srgb,var(--job) 35%,#fff)}
+.pn-jobbtn small svg{width:13px;height:13px}
+.pn-jobbtn .pn-pay{margin-left:auto}
+/* Lo que gana */
+.pn-pay{display:inline-flex;flex-direction:column;align-items:flex-end;padding:6px 10px;border-radius:12px;background:linear-gradient(135deg,#10b981,#0d9488);color:#fff;font-weight:700;font-size:14px;line-height:1.1;white-space:nowrap}
+.pn-pay small{font-size:10.5px;font-weight:500;opacity:.9;color:#fff}
+.pn-pay.neg{background:linear-gradient(135deg,#f43f5e,#e11d48)}
+.pn-row .pn-pay{align-self:center}
+/* Mis carros (los de /vehiculo registrar) */
+.pn-cars{display:grid;gap:10px}
+.pn-car{display:flex;align-items:center;gap:12px;padding:10px;border-radius:16px;border:1px solid var(--p-line);background:var(--p-card2)}
+.pn-car img,.pn-car-ico{width:84px;height:56px;flex-shrink:0;border-radius:11px;object-fit:cover}
+.pn-car-ico{display:grid;place-items:center;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff}
+.pn-car > div{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.pn-car b{font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pn-car small{color:var(--p-mute,#a6a3c9);font-size:12px}
+@media (max-width:560px){.pn-jobbtns{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){.pn-jobbtn{transition:none}.pn-jobbtn:hover{transform:none}}

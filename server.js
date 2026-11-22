@@ -17,7 +17,7 @@ import {
 import { createRelayFetch, createSmartFetch } from './lib/relay.js';
 import os from 'node:os';
 import { connectPostgres, connectSqlite, migrate } from './lib/db.js';
-import { configureJobs, jobsFor, publicJobs, SHIFT, hasPolice } from './lib/jobs.js';
+import { configureJobs, jobsFor, publicJobs, SHIFT, hasPolice, jobPay, paysFor } from './lib/jobs.js';
 import * as panel from './lib/panel.js';
 import { buildCommands, COMMAND_LIST, COMMAND_NAMES, handleCommand, sameCommands } from './lib/commands.js';
 import { startGateway } from './lib/gateway.js';
@@ -639,6 +639,8 @@ async function botContext(interaction, store) {
     channelId: interaction.channel_id,
     botId: interaction.application_id || CLIENT_ID,
     jobs: jobsFor(roles, guildRoles, JOBS),
+    guildRoles,
+    webAdmin: roles.some((r) => WEB_ADMINS.includes(r)),
     staffRoles: STAFF_ROLES.length ? await bot.resolveRoles(guildId, STAFF_ROLES) : [],
     siteUrl: BASE_URL,
     now: () => Date.now(),
@@ -941,13 +943,18 @@ function panelRoute(handler, { write = false } = {}) {
 const panelJson = express.json({ limit: '10kb' });
 const post = (p, handler) => app.post(`/api/panel${p}`, panelLimit, panelWriteLimit, panelJson, panelRoute(handler, { write: true }));
 
-app.get('/api/panel/estado', panelLimit, panelRoute(async ({ user, db: d, jobs, staff }) => {
+app.get('/api/panel/estado', panelLimit, panelRoute(async ({ user, db: d, jobs, roles, staff }) => {
   const since = weekAgo();
-  const [character, account, shift, week, fines, arrests, transactions, shifts, ranking, linked] = await Promise.all([
+  const [character, account, shift, week, fines, arrests, transactions, shifts, ranking, linked, salaries] = await Promise.all([
     panel.getCharacter(d, user.id), panel.getAccount(d, user.id), panel.activeShift(d, user.id),
     panel.shiftStats(d, user.id, since), panel.listFines(d, user.id), panel.listArrests(d, user.id), panel.listTransactions(d, user.id),
-    panel.listShifts(d, user.id), panel.shiftRanking(d, since), panel.getUserRoblox(d, user.id),
+    panel.listShifts(d, user.id), panel.shiftRanking(d, since), panel.getUserRoblox(d, user.id), panel.listSalaries(d),
   ]);
+  // Cuánto gana cada trabajo y la persona (lo pone un admin con /salario-configurar del bot)
+  const mine = salaries.filter((x) => (roles || []).includes(x.role_id));
+  const guildRoles = mine.length && bot ? await bot.guildRoles(HOME_GUILD).catch(() => []) : [];
+  const pay = jobPay(salaries, JOBS);
+  const sueldos = paysFor(salaries, roles || [], guildRoles, JOBS);
   const solicitud = character ? null : await panel.latestApplication(d, user.id);
   // Roblox: el de la cédula, el vinculado o el de la whitelist (con su foto)
   const rbxName = character?.roblox_name || linked?.name || solicitud?.roblox?.name || '';
@@ -957,7 +964,7 @@ app.get('/api/panel/estado', panelLimit, panelRoute(async ({ user, db: d, jobs, 
   return {
     now: Date.now(), user, modo: dbMode, staff, character, account, shift, stats: week, fines, arrests, transactions, roblox,
     shifts, ranking: ranking.map(({ _id, ...r }) => ({ ...r, yo: _id === user.id })), online: stats.online, erlc: await erlcStatus(),
-    solicitud, jobs, jobInfo: publicJobs(JOBS), shiftRules: SHIFT, money: panel.MONEY, options: OPTIONS,
+    solicitud, jobs, jobInfo: publicJobs(JOBS), shiftRules: SHIFT, money: panel.MONEY, options: OPTIONS, pay, sueldos,
   };
 }));
 
@@ -1126,6 +1133,16 @@ app.get('/api/panel/policia/actividad', panelLimit, panelRoute(async ({ user, db
 app.use('/api', (req, res) => res.status(404).json({ error: 'no_encontrado' }));
 
 // Fotos de carros y casas (las sube un admin)
+app.get('/img/vehiculo/:placa', async (req, res) => {
+  const placa = String(req.params.placa || '').toUpperCase();
+  const d = /^[A-Z0-9-]{3,12}$/.test(placa) ? await getDb() : null;
+  const img = d ? await market.getVehicleImage(d, placa).catch(() => null) : null;
+  if (!img) return res.status(404).end();
+  res.setHeader('Content-Type', img.mime);
+  res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.end(img.body);
+});
 app.get('/img/catalogo/:id', async (req, res) => {
   const id = Number(req.params.id);
   const d = Number.isSafeInteger(id) ? await getDb() : null;

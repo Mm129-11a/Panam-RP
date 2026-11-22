@@ -128,3 +128,46 @@ test('espejo: /arrestar y /multa del bot de antes salen en la web sin contestar 
   // otros comandos (dinero, casino…) no se tocan
   assert.equal(await mirrorOldCommand({ id: 'i5', type: 2, data: { name: 'balance', options: [] } }, ctxOf(e, '1001')), null);
 });
+
+test('espejo: /vehiculo registrar sale como "mi carro" (con foto) y /salario-configurar muestra cuánto gana', async () => {
+  const { myAssets, getVehicleImage } = await import('../lib/market.js');
+  const { jobPay, paysFor } = await import('../lib/jobs.js');
+  const db = await setup();
+  const e = env(db);
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(300, 7)]);
+  const asked = [];
+  const fetch = async (url) => { asked.push(url); return { ok: true, arrayBuffer: async () => png }; };
+  const veh = { id: 'v1', type: 2, data: { name: 'vehiculo', options: [{ type: 1, name: 'registrar', options: [
+    { name: 'placa', value: 'abc-123' }, { name: 'modelo', value: 'Hilux' }, { name: 'marca', value: 'Toyota' }, { name: 'color', value: 'Rojo' }, { name: 'imagen', value: 'att1' }] }],
+    resolved: { attachments: { att1: { url: 'https://cdn.discordapp.com/a/1/car.png?ex=1', proxy_url: 'https://media.discordapp.net/a/1/car.png?ex=1', width: 1920, height: 1080, size: 2_500_000 } } } } };
+  assert.match(await mirrorOldCommand(veh, { ...ctxOf(e, '1001'), fetch }), /ABC-123.*con foto/);
+  assert.match(asked[0], /media\.discordapp\.net.*width=800&height=450/, 'pide la foto pequeña (la grande pesa mucho)');
+  const mine = await myAssets(db, '1001');
+  assert.equal(mine.vehicles[0].placa, 'ABC-123');
+  assert.equal(mine.vehicles[0].marca, 'Toyota');
+  assert.match(mine.vehicles[0].imagen, /^\/img\/vehiculo\/ABC-123/);
+  assert.equal((await getVehicleImage(db, 'ABC-123')).mime, 'image/png');
+  // sin foto válida igual queda el carro
+  const veh2 = structuredClone(veh); veh2.id = 'v2'; veh2.data.options[0].options[0].value = 'XY9999';
+  assert.match(await mirrorOldCommand(veh2, { ...ctxOf(e, '1001'), fetch: async () => ({ ok: true, arrayBuffer: async () => Buffer.from('no es imagen') }) }), /XY9999 de 1001$/);
+  assert.equal((await myAssets(db, '1001')).vehicles.length, 2);
+
+  // /salario-configurar: solo admins
+  const sal = (id, rol, monto, horas) => ({ id, type: 2, data: { name: 'salario-configurar', options: [{ name: 'rol', type: 8, value: rol }, { name: 'monto', type: 4, value: monto }, ...(horas ? [{ name: 'cooldown_horas', type: 4, value: horas }] : [])] } });
+  assert.equal(await mirrorOldCommand(sal('s0', ROLE.pn, 900), ctxOf(e, '1001')), null, 'alguien sin admin no cambia nada');
+  const admin = { ...ctxOf(e, '1001'), permissions: String(1n << 3n) };
+  assert.match(await mirrorOldCommand(sal('s1', ROLE.pn, 900), admin), /900 cada 24 h/);
+  assert.match(await mirrorOldCommand(sal('s2', ROLE.att, 650, 12), admin), /650 cada 12 h/);
+  assert.match(await mirrorOldCommand(sal('s3', '999', -50, 48), admin), /-50/);
+  const salaries = await P.listSalaries(db);
+  const pay = jobPay(salaries);
+  assert.deepEqual(pay.policia, { monto: 900, cooldown_h: 24 });
+  assert.deepEqual(pay.transito, { monto: 650, cooldown_h: 12 });
+  assert.deepEqual(pay.mecanico, { monto: 650, cooldown_h: 12 }, 'el rol de la ATT también es mecánico');
+  assert.equal(pay.bomberos, undefined);
+  const mio = paysFor(salaries, [ROLE.att, '999'], [{ id: '999', name: 'Ciudadano' }]);
+  assert.deepEqual(mio.map((x) => [x.name, x.job, x.monto]).sort(), [['ATT / Mecánico', 'transito', 650], ['Ciudadano', null, -50]]);
+  // monto 0 = se quita
+  await mirrorOldCommand(sal('s4', ROLE.pn, 0), admin);
+  assert.equal(jobPay(await P.listSalaries(db)).policia, undefined);
+});
