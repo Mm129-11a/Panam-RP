@@ -30,6 +30,10 @@ test('reconoce un bloqueo de IP (1015) frente a un límite normal', async () => 
   assert.equal(await isIpBan(new Response('<html>banned you temporarily</html>', { status: 429, headers: { 'content-type': 'text/html' } })), true);
   assert.equal(await isIpBan(new Response('{"retry_after":1,"global":false}', { status: 429, headers: { 'content-type': 'application/json' } })), false);
   assert.equal(await isIpBan(new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })), false);
+  // castigo largo en JSON (Render comparte la IP): también se va por el puente
+  assert.equal(await isIpBan(new Response('{"message":"You are being rate limited.","retry_after":2820,"global":false}', { status: 429, headers: { 'content-type': 'application/json' } })), true);
+  assert.equal(await isIpBan(new Response('{"message":"You are being blocked from accessing our API temporarily due to exceeding our rate limits frequently.","code":0}', { status: 429, headers: { 'content-type': 'application/json' } })), true);
+  assert.equal(await isIpBan(new Response('{"retry_after":45.5,"global":true}', { status: 429, headers: { 'content-type': 'application/json' } })), false, 'espera corta: se espera, no es bloqueo');
 });
 
 test('ida y vuelta por el puente, con firma y solo cabeceras permitidas', async () => {
@@ -79,4 +83,16 @@ test('va directo y usa el puente solo cuando la IP está bloqueada (y un rato de
 
   const noRelay = createSmartFetch({ direct: async () => new Response('error code: 1015', { status: 429 }) });
   assert.equal((await noRelay('https://discord.com/api/x')).status, 429, 'sin puente devuelve el 429 tal cual');
+});
+
+test('un castigo largo de Discord (JSON, "esperar 2820s") usa el puente durante todo ese tiempo', async () => {
+  let t = 0; const calls = [];
+  const direct = async () => { calls.push('directo'); return new Response('{"message":"You are being rate limited.","retry_after":2820,"global":false}', { status: 429, headers: { 'content-type': 'application/json' } }); };
+  const relay = async () => { calls.push('puente'); return new Response('{"access_token":"x"}', { status: 200, headers: { 'content-type': 'application/json' } }); };
+  let mins = 0;
+  const f = createSmartFetch({ direct, relay, banMs: 600_000, now: () => t, onBan: (m) => { mins = m; } });
+  assert.equal((await f('https://discord.com/api/oauth2/token', { method: 'POST' })).status, 200, 'el login entra por el puente');
+  assert.equal(mins, 47);
+  t = 30 * 60_000; await f('https://discord.com/api/x');
+  assert.equal(calls.at(-1), 'puente', 'a los 30 min sigue por el puente (el castigo es de 47)');
 });

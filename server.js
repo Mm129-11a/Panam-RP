@@ -121,7 +121,7 @@ const relay = RELAY_URL && RELAY_SECRET.length >= 32 ? createRelayFetch({ relayU
 const dfetch = createSmartFetch({
   direct: fetch,
   relay,
-  onBan: () => console.log('[puente] Discord bloquea la IP principal: se usa el puente durante 10 min'),
+  onBan: (min) => console.log(`[puente] Discord bloquea la IP principal: se usa el puente durante ${min} min`),
 });
 const discordFetch = (url, opts = {}) => dfetch(url, { ...opts, signal: AbortSignal.timeout(8000) });
 const bot = BOT_TOKEN ? createDiscordBot({ token: BOT_TOKEN, apiBase: API, fetchImpl: dfetch }) : null;
