@@ -121,20 +121,27 @@
         ${err('roblox')}
       </div>`;
   }
-  // ─── Vincular la cuenta de Roblox (código en la descripción del perfil) ───
+  // ─── Vincular la cuenta de Roblox: con Discord (un toque) o con un código en la descripción ───
   const needsLink = () => Boolean(S.me && S.me.user && S.me.robloxLinkRequired);
   const isLinked = () => Boolean(S.me && S.me.roblox && S.d.robloxUser && String(S.me.roblox.id) === String(S.d.robloxUser.id));
   let linkCode = '';
 
-  function linkHtml() {
-    const r = S.d.robloxUser;
-    if (!needsLink() || !r) return '';
+  const viaDiscord = () => `<div class="ap-link-discord">
+        <a class="btn" href="/auth/discord?para=roblox&next=/solicitud">Vincular con Discord</a>
+        <span>Usa la cuenta de Roblox que tienes en <b>Discord → Ajustes → Conexiones</b>. Es automático.</span>
+      </div>`;
+  function linkHtml(none = false) {
+    const r = none ? null : S.d.robloxUser;
+    if (!needsLink()) return '';
+    if (!r) return `<div class="ap-link"><b>¿Tienes Roblox conectado en Discord?</b>${viaDiscord()}<span class="ap-link-or">Si no, escribe tu usuario arriba y te damos un código.</span></div>`;
     if (isLinked()) {
-      return `<div class="ap-link ok"><b>✓ Cuenta de Roblox vinculada</b><span>Ya puedes borrar el código de tu descripción si quieres.</span></div>`;
+      return `<div class="ap-link ok"><b>✓ Cuenta de Roblox vinculada</b><span>Si pusiste un código en tu descripción, ya puedes borrarlo.</span></div>`;
     }
     const profile = `https://www.roblox.com/users/${encodeURIComponent(r.id)}/profile`;
     return `<div class="ap-link">
         <b>Vincula tu cuenta para confirmar que es tuya</b>
+        ${viaDiscord()}
+        <span class="ap-link-or">O con un código en tu perfil de Roblox:</span>
         <ol>
           <li>Toca <b>Obtener código</b>.</li>
           <li>Pega el código en la <b>descripción ("Acerca de")</b> de tu perfil de Roblox y guárdala. <a href="${profile}" target="_blank" rel="noopener">Abrir mi perfil ↗</a></li>
@@ -168,7 +175,7 @@
 
   function foundHtml() {
     const r = S.d.robloxUser;
-    if (!r || r.name.toLowerCase() !== clean(S.d.roblox).toLowerCase()) return '';
+    if (!r || r.name.toLowerCase() !== clean(S.d.roblox).toLowerCase()) return linkHtml(true);
     const pic = r.avatar ? `<img src="${esc(r.avatar)}" alt="Avatar de ${esc(r.name)}" data-rbx-img />` : '';
     return `<div class="ap-rbx">
         <div class="ap-rbx-pic"><span class="ph">${esc(r.name.charAt(0).toUpperCase())}</span>${pic}</div>
@@ -416,8 +423,10 @@
 
   // ─── Inicio ───
   async function init() {
-    const login = new URLSearchParams(location.search).get('login');
-    if (login) history.replaceState(null, '', location.pathname);
+    const qs = new URLSearchParams(location.search);
+    const login = qs.get('login');
+    const rbx = qs.get('roblox');
+    if (login || rbx) history.replaceState(null, '', location.pathname);
     try {
       const [me, q] = await Promise.all([
         fetch('/api/me', { credentials: 'same-origin' }).then((r) => r.json()),
@@ -442,7 +451,17 @@
     else if (!S.receiving) banner('warn', 'El staff aún no activó la recepción de solicitudes. Puedes llenarla, pero no enviarla todavía.');
 
     loadDraft();
+    // Volvió de "Vincular con Discord": se usa la cuenta de Roblox que tiene conectada
+    if (S.me.roblox && (rbx === 'ok' || !S.d.robloxUser)) {
+      const r = S.me.roblox;
+      S.d.roblox = r.name; S.d.robloxUser = { id: String(r.id), name: r.name, displayName: r.displayName || r.name, avatar: r.avatar || null };
+      saveDraft();
+    }
     render();
+    if (rbx === 'ok') toast(`¡Roblox vinculado: ${S.me.roblox?.name || ''}!`);
+    else if (rbx === 'none') banner('warn', 'No vimos Roblox en tus conexiones de Discord. En Discord ve a <b>Ajustes de usuario → Conexiones → Roblox</b>, conéctalo y vuelve a intentar. O usa el código.');
+    else if (rbx === 'otra') toast('Entraste con otra cuenta de Discord. Usa la misma con la que iniciaste sesión.');
+    else if (rbx === 'error') toast('No se pudo vincular con Discord. Intenta de nuevo o usa el código.');
   }
   init();
 })();

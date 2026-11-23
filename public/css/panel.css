@@ -617,3 +617,8 @@ a.pn-stat:hover{border-color:#3a4358;transform:translateY(-2px)}
 .pn-car small{color:var(--p-mute,#a6a3c9);font-size:12px}
 @media (max-width:560px){.pn-jobbtns{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){.pn-jobbtn{transition:none}.pn-jobbtn:hover{transform:none}}
+/* Vincular Roblox: con Discord o con código */
+.pn-linkways{display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin-top:6px}
+.pn-linkways > .pn-btn{background:linear-gradient(135deg,#5865f2,#7c3aed)}
+.pn-linkways > small{color:var(--p-mute,#a6a3c9);font-size:12.5px;line-height:1.5}
+.pn-linkways .pn-link{margin-top:0}

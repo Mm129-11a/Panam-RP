@@ -43,6 +43,7 @@
     back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
     logout: '<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/>',
     grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+    link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
   };
   const ico = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || ''}</svg>`;
 
@@ -232,11 +233,15 @@
       </section>`;
   }
 
-  // Vincular Roblox: código en la descripción del perfil de Roblox
+  // Vincular Roblox: con Discord (si tiene Roblox en sus conexiones) o con un código en la descripción
   function linkBox() {
     const L = ui.link;
     if (!L) {
-      return `<form class="pn-link" data-form="roblox" novalidate><input class="ap-input" name="usuario" maxlength="20" placeholder="Tu usuario de Roblox" autocomplete="off" aria-label="Tu usuario de Roblox" value="${esc(S.roblox?.name || '')}"><button class="pn-btn gold sm" type="submit">Vincular</button><span class="pn-err" data-err="usuario"></span></form>`;
+      return `<div class="pn-linkways">
+        <a class="pn-btn blue sm" href="/auth/discord?para=roblox&next=/panel">${ico('link')}Vincular con Discord</a>
+        <small>Automático si tienes Roblox en <b>Discord → Ajustes → Conexiones</b>. Si no, con un código:</small>
+        <form class="pn-link" data-form="roblox" novalidate><input class="ap-input" name="usuario" maxlength="20" placeholder="Tu usuario de Roblox" autocomplete="off" aria-label="Tu usuario de Roblox" value="${esc(S.roblox?.name || '')}"><button class="pn-btn gold sm" type="submit">Vincular con código</button><span class="pn-err" data-err="usuario"></span></form>
+      </div>`;
     }
     return `<div class="pn-linkbox">
         <small>Pega este código en la <b>descripción</b> de tu perfil de Roblox (<b>@${esc(L.user.name)}</b>), guárdala y toca Comprobar:</small>
@@ -1018,10 +1023,16 @@
     } catch (e) {
       return gate(e);
     }
-    const login = new URLSearchParams(location.search).get('login');
-    if (login) history.replaceState(null, '', location.pathname + location.hash);
+    const qs = new URLSearchParams(location.search);
+    const login = qs.get('login');
+    const rbx = qs.get('roblox');
+    if (login || rbx) history.replaceState(null, '', location.pathname + location.hash);
     if (login === 'ok') toast(`¡Hola, ${S.user.name}!`);
     render();
+    if (rbx === 'ok') toast(`¡Roblox vinculado${S.roblox?.name ? `: ${S.roblox.name}` : ''}!`);
+    else if (rbx === 'none') toast('No vimos Roblox en tus conexiones de Discord. Conéctalo en Discord → Ajustes → Conexiones, o usa el código.', 'err');
+    else if (rbx === 'otra') toast('Usa la misma cuenta de Discord con la que entraste.', 'err');
+    else if (rbx === 'error') toast('No se pudo vincular con Discord. Intenta de nuevo o usa el código.', 'err');
   }
   load();
 })();

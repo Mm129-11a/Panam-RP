@@ -26,7 +26,7 @@ import { runOld, runComponent, housekeeping, getCfg as botCfg } from './lib/oldb
 import { JUSTICE_RE, justiceModal, runJustice, submitCase, listMyCases, DENUNCIAS } from './lib/justicia.js';
 import { mirrorOldCommand, ARREST_CHANNEL, ARREST_ROLE } from './lib/mirror.js';
 import { createErlc } from './lib/erlc.js';
-import { fetchRobloxProfile, hasCode, LINK_TTL, makeCode } from './lib/robloxlink.js';
+import { fetchRobloxProfile, hasCode, LINK_TTL, makeCode, robloxFromConnections } from './lib/robloxlink.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -152,12 +152,14 @@ async function erlcStatus() {
 app.get('/auth/discord', authLimit, noStore, (req, res) => {
   const next = RETURN_PATHS.includes(req.query.next) ? req.query.next : '/';
   if (!loginConfigured()) return res.redirect(`${next}?login=noconfig`);
-  if (req.session.user) return res.redirect(next);
+  // ?para=roblox: ya con sesión, pide ver las conexiones de Discord para vincular Roblox en un toque
+  const kind = req.query.para === 'roblox' && req.session.user ? 'roblox' : 'login';
+  if (req.session.user && kind === 'login') return res.redirect(next);
   const state = crypto.randomBytes(24).toString('hex');
-  req.session.oauth = { state, t: Date.now(), next };
+  req.session.oauth = { state, t: Date.now(), next, kind };
   const params = new URLSearchParams({
     client_id: CLIENT_ID, redirect_uri: REDIRECT_URI, response_type: 'code',
-    scope: GUILD_ID ? 'identify guilds' : 'identify', state, prompt: 'none',
+    scope: kind === 'roblox' ? 'identify connections' : (GUILD_ID ? 'identify guilds' : 'identify'), state, prompt: 'none',
   });
   res.redirect(`https://discord.com/oauth2/authorize?${params}`);
 });
@@ -166,7 +168,11 @@ app.get('/auth/discord/callback', authLimit, noStore, async (req, res) => {
   const { code, state, error } = req.query;
   const saved = req.session.oauth;
   req.session.oauth = null; // un intento de login solo se puede usar una vez
-  const back = (result) => res.redirect(`${saved && RETURN_PATHS.includes(saved.next) ? saved.next : '/'}?login=${result}`);
+  const forRoblox = saved?.kind === 'roblox';
+  const back = (result) => {
+    const to = saved && RETURN_PATHS.includes(saved.next) ? saved.next : '/';
+    res.redirect(forRoblox ? `${to}?roblox=${result}${to === '/panel' ? '#perfil' : ''}` : `${to}?login=${result}`);
+  };
 
   if (error || typeof code !== 'string' || !code || code.length > 256) return back('cancel');
   if (!saved || typeof saved.state !== 'string' || Date.now() - Number(saved.t) > OAUTH_MAX_AGE
@@ -192,6 +198,24 @@ app.get('/auth/discord/callback', authLimit, noStore, async (req, res) => {
     if (!userRes.ok) throw new Error(`user ${userRes.status}`);
     const u = await userRes.json();
     if (!/^\d{5,25}$/.test(String(u.id))) throw new Error('usuario inválido');
+
+    if (forRoblox) {
+      // Vincular Roblox con la cuenta conectada en Discord (tiene que ser la misma cuenta de Discord)
+      if (!req.session.user || String(u.id) !== req.session.user.id) return back('otra');
+      const cRes = await discordFetch(`${API}/users/@me/connections`, auth);
+      const found = robloxFromConnections(cRes.ok ? await cRes.json() : null);
+      if (!found) return back('none');
+      const profile = await fetchRobloxProfile(found.id).catch(() => null);
+      const name = profile?.name || found.name;
+      if (!ROBLOX_USER_RE.test(name)) return back('none');
+      const pic = await lookupRoblox(name).catch(() => null);
+      const roblox = { id: found.id, name, avatar: pic && String(pic.id) === found.id ? pic.avatar || null : null };
+      req.session.rbxVerified = { ...roblox, t: Date.now() };
+      req.session.rbxLink = null;
+      const store = await getDb();
+      if (store) await panel.setRoblox(store, req.session.user, roblox, Date.now(), { verified: true }).catch((e) => console.error('[db] vincular:', e.message));
+      return back('ok');
+    }
 
     if (GUILD_ID) {
       const guildsRes = await discordFetch(`${API}/users/@me/guilds`, auth);

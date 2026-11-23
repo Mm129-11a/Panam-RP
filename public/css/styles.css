@@ -437,3 +437,8 @@ footer{background:#050e24}
 header{background:rgba(7,20,48,.88)}
 /* tema a colores: franja de colores arriba */
 body > header::before{background:linear-gradient(90deg,#22d3ee,#6366f1,#a855f7,#ec4899,#f97316,#facc15)}
+/* Vincular Roblox con Discord (un toque) */
+.ap-link-discord{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin:4px 0 12px}
+.ap-link-discord .btn{background:linear-gradient(135deg,#5865f2,#7c3aed);color:#fff;white-space:nowrap}
+.ap-link-discord span{color:#c3cadc;font-size:13.5px;line-height:1.5;flex:1;min-width:200px}
+.ap-link-or{display:block;margin:0 0 8px;color:#9aa3bd;font-size:13px}

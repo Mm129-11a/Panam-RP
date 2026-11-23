@@ -263,3 +263,13 @@ test('inmobiliaria: se paga con el banco; ya no hay concesionario (los carros so
   assert.equal(rec.persona.discord_id, undefined, 'no expone el ID de Discord');
   await rejects(() => P.citizenRecord(db, ANA.id, found[0].cedula), 403);
 });
+
+test('vincular Roblox con Discord: toma la cuenta de Roblox de las conexiones', async () => {
+  const { robloxFromConnections } = await import('../lib/robloxlink.js');
+  assert.equal(robloxFromConnections(null), null);
+  assert.equal(robloxFromConnections([{ type: 'steam', id: '1', name: 'x', verified: true }]), null, 'sin Roblox conectado');
+  assert.equal(robloxFromConnections([{ type: 'roblox', id: '55', name: 'Ana_RP', verified: false }]), null, 'sin verificar no cuenta');
+  assert.equal(robloxFromConnections([{ type: 'roblox', id: '55', name: 'Ana_RP', verified: true, revoked: true }]), null, 'quitada no cuenta');
+  assert.equal(robloxFromConnections([{ type: 'roblox', id: 'abc', name: 'Ana_RP', verified: true }]), null, 'ID raro no cuenta');
+  assert.deepEqual(robloxFromConnections([{ type: 'twitch', id: '9', name: 'a', verified: true }, { type: 'roblox', id: '4815162342', name: 'Ana_RP', verified: true }]), { id: '4815162342', name: 'Ana_RP' });
+});
