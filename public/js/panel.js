@@ -1032,6 +1032,7 @@
     if (rbx === 'ok') toast(`¡Roblox vinculado${S.roblox?.name ? `: ${S.roblox.name}` : ''}!`);
     else if (rbx === 'none') toast('No vimos Roblox en tus conexiones de Discord. Conéctalo en Discord → Ajustes → Conexiones, o usa el código.', 'err');
     else if (rbx === 'otra') toast('Usa la misma cuenta de Discord con la que entraste.', 'err');
+    else if (rbx === 'busy') toast('Discord está ocupado ahora mismo. Espera un minuto y vuelve a tocar "Vincular con Discord".');
     else if (rbx === 'error') toast('No se pudo vincular con Discord. Intenta de nuevo o usa el código.', 'err');
   }
   load();

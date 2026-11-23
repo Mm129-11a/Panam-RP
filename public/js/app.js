@@ -193,6 +193,7 @@ if(q){
   else if(q==='cancel') toast('Cancelaste el inicio de sesión');
   else if(q==='noconfig') openModal('Inicio de sesión en configuración','El inicio de sesión con Discord se está activando. Mientras tanto, únete a nuestro Discord.');
   else if(q==='guild') openModal('Únete al Discord primero','Para iniciar sesión debes ser miembro del servidor de Discord de Panamá RP.');
+  else if(q==='busy') openModal('Discord está ocupado','Discord no dejó entrar en este momento. Espera un minuto e inténtalo otra vez.');
   else openModal('No se pudo iniciar sesión','Ocurrió un error al conectar con Discord. Inténtalo de nuevo.');
 }
 

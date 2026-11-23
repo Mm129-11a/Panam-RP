@@ -96,3 +96,30 @@ test('un castigo largo de Discord (JSON, "esperar 2820s") usa el puente durante 
   t = 30 * 60_000; await f('https://discord.com/api/x');
   assert.equal(calls.at(-1), 'puente', 'a los 30 min sigue por el puente (el castigo es de 47)');
 });
+
+test('un 429 que no parece bloqueo igual se prueba por el puente; si por ahí entra, sigue por el puente', async () => {
+  let t = 0; const calls = []; const odd = [];
+  // 429 "corto" de la IP de Render (Discord no lo marca como bloqueo)
+  const direct = async () => { calls.push('directo'); return new Response('{"message":"You are being rate limited.","retry_after":1.5,"global":true}', { status: 429, headers: { 'content-type': 'application/json' } }); };
+  const relay = async () => { calls.push('puente'); return new Response('{"access_token":"x"}', { status: 200, headers: { 'content-type': 'application/json' } }); };
+  let bans = 0;
+  const f = createSmartFetch({ direct, relay, banMs: 600_000, now: () => t, onBan: () => bans++, onOdd: (i) => odd.push(i) });
+  assert.equal((await f('https://discord.com/api/oauth2/token', { method: 'POST', body: 'code=1' })).status, 200, 'el login entra por el puente');
+  assert.deepEqual(calls, ['directo', 'puente']);
+  assert.equal(bans, 1);
+  assert.match(odd[0], /global=-.*retry_after/);
+  t = 5 * 60_000; await f('https://discord.com/api/x');
+  assert.equal(calls.at(-1), 'puente', 'sigue por el puente 10 min');
+  // si por el puente también es 429 (límite del bot, no de la IP), no se castiga la IP
+  const calls2 = [];
+  const g = createSmartFetch({ direct: async () => { calls2.push('d'); return new Response('{"retry_after":1}', { status: 429, headers: { 'content-type': 'application/json' } }); },
+    relay: async () => { calls2.push('p'); return new Response('{"retry_after":1}', { status: 429, headers: { 'content-type': 'application/json' } }); }, now: () => 0 });
+  assert.equal((await g('https://discord.com/api/x')).status, 429);
+  await g('https://discord.com/api/x');
+  assert.deepEqual(calls2, ['d', 'p', 'd', 'p'], 'vuelve a probar directo');
+  // al arrancar: si Discord ya dice "esperar 2820s", todo va por el puente
+  const calls3 = [];
+  const h = createSmartFetch({ direct: async () => { calls3.push('d'); return new Response('{}', { status: 200 }); }, relay: async () => { calls3.push('p'); return new Response('{}', { status: 200 }); }, now: () => 0 });
+  h.ban(2_820_000); await h('https://discord.com/api/x');
+  assert.deepEqual(calls3, ['p']);
+});

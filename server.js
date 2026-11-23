@@ -122,6 +122,7 @@ const dfetch = createSmartFetch({
   direct: fetch,
   relay,
   onBan: (min) => console.log(`[puente] Discord bloquea la IP principal: se usa el puente durante ${min} min`),
+  onOdd: (info) => console.log(`[puente] 429 raro por la IP principal (por el puente sí entra): ${info}`),
 });
 const discordFetch = (url, opts = {}) => dfetch(url, { ...opts, signal: AbortSignal.timeout(8000) });
 const bot = BOT_TOKEN ? createDiscordBot({ token: BOT_TOKEN, apiBase: API, fetchImpl: dfetch }) : null;
@@ -189,6 +190,7 @@ app.get('/auth/discord/callback', authLimit, noStore, async (req, res) => {
         code, redirect_uri: REDIRECT_URI,
       }),
     });
+    if (tokenRes.status === 429) { console.error('[login] token 429'); return back('busy'); }
     if (!tokenRes.ok) throw new Error(`token ${tokenRes.status}`);
     const { access_token } = await tokenRes.json();
     if (typeof access_token !== 'string') throw new Error('token inválido');
@@ -1230,9 +1232,11 @@ app.listen(PORT, () => {
   if (erlc) erlc.status().then((st) => console.log(st.encendido ? `ER:LC: ${st.nombre} · ${st.jugadores}/${st.maximo} jugadores` : 'ER:LC: servidor apagado')).catch((err) => console.log(`ER:LC: ${err.message}`));
   if (bot) setTimeout(() => syncCommands().catch((err) => console.error('[comandos]', err.message)), 3000);
   const probe = `${API}/invites/${encodeURIComponent(INVITE_CODE)}`;
-  discordRequest(fetch, probe).then((r) => console.log(
-    r.ok ? 'API de Discord (IP principal): responde bien' : `API de Discord (IP principal): ${r.status}${r.limit ? ` (${describeLimit(r.limit)})` : ''}`,
-  ));
+  discordRequest(fetch, probe).then((r) => {
+    console.log(r.ok ? 'API de Discord (IP principal): responde bien' : `API de Discord (IP principal): ${r.status}${r.limit ? ` (${describeLimit(r.limit)})` : ''}`);
+    // Si al arrancar la IP ya está castigada, todo va por el puente desde el principio
+    if (r.status === 429 && (r.limit?.cloudflare || (r.limit?.retryAfter ?? 0) > 60)) dfetch.ban((r.limit?.retryAfter || 600) * 1000);
+  });
   if (relay) {
     relay(probe).then((r) => console.log(r.ok ? 'Puente a Discord: listo y Discord responde' : `Puente a Discord: Discord respondió ${r.status}`))
       .catch((err) => console.log(`Puente a Discord: no responde (${err.message})`));

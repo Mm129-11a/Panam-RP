@@ -440,6 +440,7 @@
     }
 
     if (login === 'guild') banner('warn', `Para continuar debes estar en el Discord de Panamá RP. <a href="${INVITE}" target="_blank" rel="noopener">Únete aquí</a> y vuelve a iniciar sesión.`);
+    else if (login === 'busy') toast('Discord está ocupado ahora mismo. Espera un minuto e inténtalo otra vez.');
     else if (login === 'error') toast('No se pudo iniciar sesión. Inténtalo de nuevo.');
     else if (login === 'cancel') toast('Cancelaste el inicio de sesión.');
     else if (login === 'ok' && S.me.user) toast(`¡Hola, ${S.me.user.name}!`);
@@ -461,6 +462,7 @@
     if (rbx === 'ok') toast(`¡Roblox vinculado: ${S.me.roblox?.name || ''}!`);
     else if (rbx === 'none') banner('warn', 'No vimos Roblox en tus conexiones de Discord. En Discord ve a <b>Ajustes de usuario → Conexiones → Roblox</b>, conéctalo y vuelve a intentar. O usa el código.');
     else if (rbx === 'otra') toast('Entraste con otra cuenta de Discord. Usa la misma con la que iniciaste sesión.');
+    else if (rbx === 'busy') toast('Discord está ocupado ahora mismo. Espera un minuto y vuelve a tocar "Vincular con Discord".');
     else if (rbx === 'error') toast('No se pudo vincular con Discord. Intenta de nuevo o usa el código.');
   }
   init();
