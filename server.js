@@ -1010,6 +1010,11 @@ post('/cedula', async ({ user, db: d }, req) => {
 });
 post('/banco/mover', async ({ user, db: d }, req) => ({ account: await panel.moveMoney(d, user.id, req.body?.tipo, req.body?.monto) }));
 post('/banco/transferir', async ({ user, db: d }, req) => panel.transfer(d, user.id, req.body?.cedula, req.body?.monto, req.body?.nota));
+// Enviar dinero: los recientes y buscar por nombre, cédula o usuario de Roblox
+app.get('/api/panel/banco/contactos', panelLimit, panelRoute(async ({ user, db: d }, req) => {
+  const q = String(req.query.q || '');
+  return q.trim().length >= 2 ? { resultados: await panel.findPayees(d, user.id, q) } : { recientes: await panel.recentPayees(d, user.id) };
+}));
 post('/multas/pagar', async ({ user, db: d }, req) => ({ account: await panel.payFine(d, user.id, req.body?.id) }));
 post('/turno/iniciar', async ({ user, db: d, jobs }, req) => ({ shift: await panel.startShift(d, user.id, req.body?.job, { jobs: JOBS, allowed: jobs, verify: verifyInGame }) }));
 post('/turno/terminar', async ({ user, db: d }) => ({ result: await panel.endShift(d, user.id, { jobs: JOBS }) }));

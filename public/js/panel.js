@@ -177,14 +177,14 @@
       </section>
       <h3 class="pn-sec"><span>${ico('grid')}</span>Categorías</h3>
       <div class="pn-cats">
-        ${cat('#perfil', 'green', 'user', 'Mi perfil', 'Cédula, banco, multas y antecedentes')}
+        ${cat('#perfil', 'green', 'user', 'Mi perfil', 'Cédula, banco, multas y antecedentes', '/img/categorias/perfil.svg')}
         ${hasWork() ? cat('#trabajos', 'blue', 'power', 'Servicio Trabajos', S.jobs.length === 1 ? `Tu trabajo: ${jobInfo(S.jobs[0]).name}` : 'Inicia y termina tus turnos', jobImg(S.shift?.job || S.jobs[0])) : ''}
-        ${cat('#banco', 'gold', 'bank', 'Banco', 'Depósitos, retiros y transferencias')}
-        ${cat('#tienda', 'purple', 'home', 'Casas y mis carros', 'Inmobiliaria y tus vehículos')}
-        ${cat('#negro', 'dark', 'mask', 'Mercado negro', 'Se paga en efectivo')}
-        ${cat('#justicia', 'cyan', 'scale', 'Justicia', 'Denuncias y juicios')}
-        ${S.staff?.mod ? cat('#admin', 'rose', 'shield', 'Administración', S.staff.admin ? 'Stock, base de datos y casos' : 'Base de datos y casos') : ''}
-        ${cat('/#normativa', 'indigo', 'book', 'Normativa', 'Reglas del servidor')}
+        ${cat('#banco', 'gold', 'bank', 'Banco', 'Depósitos, retiros y envíos de dinero', '/img/categorias/banco.svg')}
+        ${cat('#tienda', 'purple', 'home', 'Casas y mis carros', 'Inmobiliaria y tus vehículos', '/img/categorias/casas.svg')}
+        ${cat('#negro', 'dark', 'mask', 'Mercado negro', 'Se paga en efectivo', '/img/categorias/negro.svg')}
+        ${cat('#justicia', 'cyan', 'scale', 'Justicia', 'Denuncias y juicios', '/img/categorias/justicia.svg')}
+        ${S.staff?.mod ? cat('#admin', 'rose', 'shield', 'Administración', S.staff.admin ? 'Stock, fotos, base de datos y casos' : 'Base de datos y casos', '/img/categorias/admin.svg') : ''}
+        ${cat('/#normativa', 'indigo', 'book', 'Normativa', 'Reglas del servidor', '/img/categorias/normativa.svg')}
       </div>`;
   }
 
@@ -593,10 +593,24 @@
       ${sueldos()}
       <div class="pn-two">
         <section class="pn-box">${moverForm()}</section>
-        <section class="pn-box">${transferForm()}</section>
+        <section class="pn-box pn-send">${sendCard()}</section>
       </div>
       <section class="pn-box"><h3 class="pn-h3">Movimientos</h3>${txList(S.transactions)}</section>`;
   }
+  // Tarjeta de Enviar dinero (abre el envío paso a paso)
+  function sendCard() {
+    if (!ui.txRecent) loadRecent();
+    const rec = ui.txRecent || [];
+    return `<div class="pn-send-top"><span class="pn-send-ico">${ico('send')}</span><div><h4>Enviar dinero</h4><p>A cualquier ciudadano, al instante y sin comisión.</p></div></div>
+      ${rec.length ? `<div class="pn-send-rec"><small>Recientes</small><div>${rec.map((p, i) => `<button type="button" class="pn-person" data-act="tx-open" data-rec="${i}" title="${esc(p.nombre)} ${esc(p.apellidos)}">${avatar(p)}<span>${esc(p.nombre.split(' ')[0])}</span></button>`).join('')}</div></div>` : ''}
+      <button class="pn-btn gold lg pn-send-go" type="button" data-act="tx-open">${ico('send')}Enviar dinero</button>`;
+  }
+  async function loadRecent() {
+    ui.txRecent = [];
+    try { ui.txRecent = (await api('/api/panel/banco/contactos')).recientes || []; } catch { /* sin recientes */ }
+    if (currentView() === 'banco' && ui.txRecent.length) render();
+  }
+
   function sueldos() {
     const list = S.sueldos || [];
     if (!list.length) return '';
@@ -891,15 +905,114 @@
       <button class="pn-btn blue" type="submit">Enviar dinero</button>
     </form>`;
 
+  // ─── Enviar dinero paso a paso: a quién → cuánto → confirmar → comprobante ───
+  const AV = ['#e11d2e', '#2563eb', '#7c3aed', '#0891b2', '#db2777', '#ea580c', '#16a34a'];
+  function avatar(p, big = false) {
+    const name = `${p.nombre || ''} ${p.apellidos || ''}`.trim();
+    let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    const ini = (p.nombre?.[0] || '?') + (p.apellidos?.[0] || '');
+    return `<span class="pn-av av${h % AV.length} ${big ? 'big' : ''}">${esc(ini.toUpperCase())}</span>`; // color por clase (la CSP no deja style en línea)
+  }
+  const QUICK = [100, 500, 1000, 5000];
+  const NOTES = ['🏠 Renta', '🍔 Comida', '🚗 Carro', '🎁 Regalo', '💼 Pago', '🤝 Préstamo'];
+  function openTransfer(to = null) {
+    ui.tx = { step: to ? 'monto' : 'quien', to, monto: '', nota: '', q: '', results: null };
+    modal.querySelector('.pn-modal-box').classList.add('tx');
+    txRender();
+    modal.classList.remove('hidden');
+    document.body.classList.add('pn-noscroll');
+    setTimeout(() => $('#tx-q')?.focus(), 60);
+  }
+  function txRender() {
+    const t = ui.tx; if (!t) return;
+    const banco = Number(S.account?.banco || 0);
+    const n = Number(t.monto || 0);
+    const steps = ['quien', 'monto', 'confirmar'];
+    const dots = t.step === 'listo' ? '' : `<div class="tx-dots">${steps.map((x, i) => `<i class="${steps.indexOf(t.step) >= i ? 'on' : ''}"></i>`).join('')}</div>`;
+    const who = t.to ? `<div class="tx-to">${avatar(t.to)}<div><b>${esc(t.to.nombre)} ${esc(t.to.apellidos)}</b><small>${esc(t.to.cedula)}${t.to.roblox_name ? ` · ${esc(t.to.roblox_name)}` : ''}</small></div>${t.step !== 'listo' ? '<button class="pn-btn ghost sm" type="button" data-act="tx-step" data-step="quien">Cambiar</button>' : ''}</div>` : '';
+    let html = '';
+    if (t.step === 'quien') {
+      const list = t.q.trim().length >= 2 ? (t.results || []) : (ui.txRecent || []);
+      html = `<h3 class="tx-title" id="pn-modal-title">¿A quién le envías?</h3>
+        <label class="tx-search">${ico('search')}<input id="tx-q" type="search" placeholder="Nombre, cédula o usuario de Roblox" autocomplete="off" value="${esc(t.q)}" aria-label="Buscar a quién enviar"></label>
+        <small class="tx-label">${t.q.trim().length >= 2 ? (t.results === null ? 'Buscando…' : `${list.length} resultado(s)`) : (list.length ? 'Recientes' : 'Escribe al menos 2 letras para buscar')}</small>
+        <div class="tx-people">${list.map((p, i) => `<button type="button" class="tx-person" data-act="tx-pick" data-i="${i}">${avatar(p)}<span><b>${esc(p.nombre)} ${esc(p.apellidos)}</b><small>${esc(p.cedula)}${p.roblox_name ? ` · ${esc(p.roblox_name)}` : ''}</small></span>${ico('arrow')}</button>`).join('')}
+          ${t.q.trim().length >= 2 && t.results && !list.length ? '<p class="pn-muted">No encontramos a nadie con eso. Prueba con su cédula.</p>' : ''}</div>`;
+    } else if (t.step === 'monto') {
+      const over = n > banco;
+      html = `<h3 class="tx-title" id="pn-modal-title">¿Cuánto le envías?</h3>${who}
+        <div class="tx-amount ${over ? 'over' : ''}"><span>$</span><b>${n ? n.toLocaleString('es-PA') : '0'}</b></div>
+        <p class="tx-left ${over ? 'bad' : ''}">${over ? `Solo tienes ${money(banco)} en el banco` : `Te quedarían ${money(banco - n)} en el banco`}</p>
+        <div class="tx-quick">${QUICK.map((v) => `<button type="button" data-act="tx-add" data-v="${v}">+${money(v)}</button>`).join('')}<button type="button" data-act="tx-add" data-v="todo">Todo</button></div>
+        <div class="tx-pad">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', '⌫'].map((k) => `<button type="button" data-act="tx-key" data-k="${k}" ${k === '⌫' ? 'aria-label="Borrar"' : ''}>${k}</button>`).join('')}</div>
+        <small class="tx-label">Nota (opcional)</small>
+        <div class="tx-notes">${NOTES.map((x) => `<button type="button" class="${t.nota === x ? 'on' : ''}" data-act="tx-nota" data-v="${esc(x)}">${x}</button>`).join('')}</div>
+        <input class="ap-input tx-nota" id="tx-nota" maxlength="80" placeholder="O escribe una nota" value="${esc(NOTES.includes(t.nota) ? '' : t.nota)}" aria-label="Nota">
+        <button class="pn-btn gold lg tx-next" type="button" data-act="tx-step" data-step="confirmar" ${n >= 1 && !over ? '' : 'disabled'}>Continuar</button>`;
+    } else if (t.step === 'confirmar') {
+      html = `<h3 class="tx-title" id="pn-modal-title">Revisa y confirma</h3>
+        <div class="tx-check"><small>Vas a enviar</small><div class="tx-amount sm"><span>$</span><b>${n.toLocaleString('es-PA')}</b></div>${who}
+          <dl><div><dt>Desde</dt><dd>Tu banco (${money(banco)})</dd></div><div><dt>Comisión</dt><dd>Gratis</dd></div>${t.nota ? `<div><dt>Nota</dt><dd>${esc(t.nota)}</dd></div>` : ''}<div><dt>Te quedan</dt><dd>${money(banco - n)}</dd></div></dl></div>
+        <button class="pn-btn gold lg tx-next" type="button" data-act="tx-send">${ico('send')}Enviar ${money(n)}</button>
+        <button class="pn-btn ghost tx-back" type="button" data-act="tx-step" data-step="monto">Atrás</button>`;
+    } else if (t.step === 'listo') {
+      const r = t.done;
+      html = `<div class="tx-ok"><div class="tx-ok-ico"><svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24"/><path d="M15 27 l7 7 l15 -16"/></svg></div>
+          <h3 class="tx-title" id="pn-modal-title">¡Dinero enviado!</h3><div class="tx-amount sm"><span>$</span><b>${Number(r.monto).toLocaleString('es-PA')}</b></div></div>
+        <div class="tx-receipt">${who}<dl><div><dt>Comprobante</dt><dd class="mono">${esc(r.ref)}</dd></div><div><dt>Fecha</dt><dd>${fechaHora(r.at)}</dd></div>${r.nota ? `<div><dt>Nota</dt><dd>${esc(r.nota)}</dd></div>` : ''}<div><dt>Tu saldo</dt><dd>${money(r.account.banco)}</dd></div></dl></div>
+        <button class="pn-btn gold lg tx-next" type="button" data-act="cerrar">Listo</button>
+        <button class="pn-btn ghost tx-back" type="button" data-act="tx-again">Enviar otra vez a ${esc(t.to.nombre.split(' ')[0])}</button>`;
+    }
+    $('#pn-modal-body').innerHTML = `<div class="tx-wrap">${dots}${html}</div>`;
+  }
+  let txTimer = null;
+  document.addEventListener('input', (ev) => {
+    if (ev.target.id === 'tx-q' && ui.tx) {
+      ui.tx.q = ev.target.value;
+      clearTimeout(txTimer);
+      if (ui.tx.q.trim().length < 2) { ui.tx.results = null; return void txKeepFocus(); }
+      ui.tx.results = null;
+      txTimer = setTimeout(async () => {
+        const q = ui.tx?.q;
+        try { const r = await api(`/api/panel/banco/contactos?q=${encodeURIComponent(q)}`); if (ui.tx && ui.tx.q === q) ui.tx.results = r.resultados || []; } catch (e) { if (ui.tx) ui.tx.results = []; toast(e.error || 'No se pudo buscar.'); }
+        txKeepFocus();
+      }, 280);
+    } else if (ev.target.id === 'tx-nota' && ui.tx) {
+      ui.tx.nota = ev.target.value.slice(0, 80);
+    }
+  });
+  function txKeepFocus() {
+    const inp = $('#tx-q'); const pos = inp?.selectionStart;
+    txRender();
+    const again = $('#tx-q'); if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch { /* */ } }
+  }
+  document.addEventListener('keydown', (ev) => {
+    if (!ui.tx || ui.tx.step !== 'monto' || modal.classList.contains('hidden') || ev.target.id === 'tx-nota') return;
+    if (/^[0-9]$/.test(ev.key)) { txKey(ev.key); ev.preventDefault(); } else if (ev.key === 'Backspace') { txKey('⌫'); ev.preventDefault(); }
+  });
+  function txKey(k) {
+    const t = ui.tx;
+    let v = t.monto;
+    if (k === '⌫') v = v.slice(0, -1); else if (v.length < 7) v = (v + k).replace(/^0+/, '');
+    t.monto = String(Math.min(Number(v || 0), S.money?.maxMove || 1_000_000) || '');
+    txRender();
+  }
+
   // ─── Ventana para depositar / retirar / transferir desde el perfil ───
   const modal = $('#pn-modal');
   function openModal(kind) {
+    if (kind === 'transferir') return openTransfer();
+    modal.querySelector('.pn-modal-box').classList.remove('tx');
+    ui.tx = null;
     $('#pn-modal-body').innerHTML = `<p class="pn-modal-bal" id="pn-modal-title">Banco ${money(S.account.banco)} · Efectivo ${money(S.account.efectivo)}</p>${kind === 'transferir' ? transferForm() : moverForm(kind)}`;
     modal.classList.remove('hidden');
     document.body.classList.add('pn-noscroll');
     setTimeout(() => $('#pn-modal-body input')?.focus(), 50);
   }
-  function closeModal() { modal.classList.add('hidden'); document.body.classList.remove('pn-noscroll'); }
+  function closeModal() {
+    modal.classList.add('hidden'); document.body.classList.remove('pn-noscroll');
+    if (ui.tx) { const sent = ui.tx.step === 'listo'; ui.tx = null; modal.querySelector('.pn-modal-box').classList.remove('tx'); if (sent) render(); }
+  }
   modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeModal(); });
 
@@ -1020,6 +1133,25 @@
     if (act === 'reintentar') return void load();
     if (act === 'cerrar') return closeModal();
     if (act === 'modal') return openModal(b.dataset.m);
+    if (act === 'tx-open') return openTransfer(b.dataset.rec != null ? (ui.txRecent || [])[Number(b.dataset.rec)] || null : null);
+    if (act === 'tx-pick') { const t = ui.tx; const list = t.q.trim().length >= 2 ? t.results || [] : ui.txRecent || []; t.to = list[Number(b.dataset.i)] || null; if (t.to) { t.step = 'monto'; txRender(); } return; }
+    if (act === 'tx-step') { ui.tx.step = b.dataset.step; txRender(); if (ui.tx.step === 'quien') setTimeout(() => $('#tx-q')?.focus(), 30); return; }
+    if (act === 'tx-key') return txKey(b.dataset.k);
+    if (act === 'tx-add') { const t = ui.tx; const bal = Number(S.account?.banco || 0); t.monto = String(b.dataset.v === 'todo' ? bal : Math.min(Number(t.monto || 0) + Number(b.dataset.v), S.money?.maxMove || 1_000_000)); txRender(); return; }
+    if (act === 'tx-nota') { ui.tx.nota = ui.tx.nota === b.dataset.v ? '' : b.dataset.v; txRender(); return; }
+    if (act === 'tx-again') { const to = ui.tx.to; openTransfer(to); return; }
+    if (act === 'tx-send') {
+      const t = ui.tx;
+      return void run(null, async () => {
+        b.disabled = true;
+        try {
+          const r = await api('/api/panel/banco/transferir', { cedula: t.to.cedula, monto: t.monto, nota: t.nota });
+          S.account = r.account; t.done = r; t.step = 'listo'; ui.txRecent = null;
+          txRender();
+          refresh().catch(() => {});
+        } finally { b.disabled = false; }
+      });
+    }
     if (act === 'tab') { ui.tab = b.dataset.tab; render(); if (b.classList.contains('pn-short')) $('#pn-exp')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     if (act === 'work') { ui.work = b.dataset.tab; render(); return; }
     if (act === 'tienda-tab') { ui.shopTab = b.dataset.tab; render(); return; }
@@ -1058,6 +1190,22 @@
         toast('Listo: se quitó la última acción.');
         render();
       } else if (act === 'terminar') {
+        if (!(S.shiftActions || []).length && !b.dataset.force) {
+          // No tocó ningún botón de acciones: se le pregunta antes de terminar
+          const j = jobInfo(S.shift?.job);
+          modal.querySelector('.pn-modal-box').classList.remove('tx'); ui.tx = null;
+          $('#pn-modal-body').innerHTML = `<div class="pn-warn">
+              <div class="pn-warn-ico">⚠️</div>
+              <h3 id="pn-modal-title">No registraste ninguna acción</h3>
+              <p>En este turno de <b>${esc(j.name)}</b> no tocaste ningún botón de acciones (${actionsOf(S.shift?.job).slice(0, 3).map((a) => `${a.icon} ${esc(a.label.toLowerCase())}`).join(', ')}…). ¿Quieres terminar el turno igual?</p>
+              <button class="pn-btn gold lg" type="button" data-act="cerrar">Seguir en servicio</button>
+              <button class="pn-btn ghost" type="button" data-act="terminar" data-force="1">Terminar igual</button>
+            </div>`;
+          modal.classList.remove('hidden');
+          document.body.classList.add('pn-noscroll');
+          return;
+        }
+        closeModal();
         const r = (await api('/api/panel/turno/terminar', {})).result;
         toast(`Turno de ${hm(r.minutes)} terminado y registrado${r.acciones ? ` (${r.acciones} acción${r.acciones === 1 ? '' : 'es'})` : ''}.`);
         await refresh();

@@ -323,3 +323,24 @@ test('acciones del turno: cada trabajo las suyas, con pausa, deshacer y en el hi
   assert.deepEqual(h.acciones, { incendio: 2, rescate: 1 });
   assert.equal(h.id, undefined, 'no se manda el id interno');
 });
+
+test('enviar dinero: buscar a quién (nombre, cédula o Roblox), recientes y comprobante', async () => {
+  const db = await fresh();
+  const ana = await citizen(db, ANA);
+  const luis = await citizen(db, BETO, {}, 0.77);
+  // no se encuentra a sí mismo, y con menos de 2 letras no busca
+  assert.deepEqual(await P.findPayees(db, ANA.id, 'a'), []);
+  assert.equal((await P.findPayees(db, ANA.id, ana.nombre.slice(0, 3))).some((p) => p.cedula === ana.cedula), false);
+  const byName = await P.findPayees(db, ANA.id, luis.nombre.slice(0, 3).toLowerCase());
+  assert.equal(byName[0].cedula, luis.cedula);
+  assert.equal(byName[0].discord_id, undefined, 'no se manda el ID de Discord');
+  assert.equal((await P.findPayees(db, ANA.id, luis.cedula.slice(0, 4)))[0].cedula, luis.cedula);
+  assert.deepEqual(await P.findPayees(db, ANA.id, '%_'), [], 'los comodines de LIKE no cuentan');
+  assert.deepEqual(await P.recentPayees(db, ANA.id), []);
+  const r = await P.transfer(db, ANA.id, luis.cedula, 1500, '🏠 Renta', NOW);
+  assert.equal(r.monto, 1500);
+  assert.equal(r.nota, '🏠 Renta');
+  assert.match(r.ref, /^PRP-[0-9A-Z]{5,7}$/);
+  assert.equal((await P.recentPayees(db, ANA.id))[0].cedula, luis.cedula);
+  assert.deepEqual(await P.recentPayees(db, BETO.id), [], 'recibir no cuenta como reciente');
+});
