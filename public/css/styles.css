@@ -442,3 +442,22 @@ body > header::before{background:linear-gradient(90deg,#22d3ee,#6366f1,#a855f7,#
 .ap-link-discord .btn{background:linear-gradient(135deg,#5865f2,#7c3aed);color:#fff;white-space:nowrap}
 .ap-link-discord span{color:#c3cadc;font-size:13.5px;line-height:1.5;flex:1;min-width:200px}
 .ap-link-or{display:block;margin:0 0 8px;color:#9aa3bd;font-size:13px}
+
+/* ═══════════ Tema rojo, azul y negro (portada y whitelist) ═══════════ */
+:root{
+  --bg:#050507; --bg2:#0b0c11; --card:#0f1016; --card2:#15161e; --line:rgba(255,255,255,.09);
+  --muted:#9a9fb0; --red:#e11d2e; --red2:#ff3344; --blue:#1d4ed8; --blue2:#3b82f6;
+}
+header{background:rgba(5,5,7,.88)}
+body > header::before{background:linear-gradient(90deg,var(--red) 0 50%,var(--blue2) 50%)}
+footer{background:#030304}
+.hero-bg{background:
+    radial-gradient(55% 70% at 82% 42%,rgba(37,99,235,.34),transparent 70%),
+    radial-gradient(40% 55% at 100% 100%,rgba(225,29,46,.30),transparent 70%),
+    radial-gradient(35% 50% at 0% 0%,rgba(225,29,46,.16),transparent 70%),
+    linear-gradient(180deg,#07080d,var(--bg))}
+.ap-link-discord .btn{background:linear-gradient(135deg,#3b82f6,#1e40af)}
+.live,.burger,.userchip{background:#0b0c11}
+.ring .pic{background:radial-gradient(circle at 50% 38%,#1b2340,#0b0c11 72%)}
+.ring .badge,.ap-code code{background:#0b0c11}
+@media (max-width:1020px){.menu{background:#0b0c11}}
