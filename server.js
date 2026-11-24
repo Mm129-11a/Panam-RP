@@ -90,7 +90,7 @@ const ipOf = (req) => {
   return ip;
 };
 app.use(securityHeaders({ https: HTTPS }));
-const PANEL_POSTS = ['/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/policia/multa', '/policia/arresto', '/tienda/comprar', '/justicia/denuncia', '/justicia/juicio', '/admin/catalogo/guardar', '/admin/catalogo/quitar', '/admin/trabajo-foto', '/admin/trabajo-foto/quitar'];
+const PANEL_POSTS = ['/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/turno/accion', '/turno/deshacer', '/policia/multa', '/policia/arresto', '/tienda/comprar', '/justicia/denuncia', '/justicia/juicio', '/admin/catalogo/guardar', '/admin/catalogo/quitar', '/admin/trabajo-foto', '/admin/trabajo-foto/quitar'];
 app.use(methodGuard(['/logout', '/api/solicitud', '/api/discord/interactions', '/api/roblox/vincular', '/api/roblox/comprobar', ...PANEL_POSTS.map((p) => `/api/panel${p}`)]));
 app.use(rateLimit({ windowMs: 60_000, max: 300, keyFn: ipOf }));
 
@@ -988,8 +988,9 @@ app.get('/api/panel/estado', panelLimit, panelRoute(async ({ user, db: d, jobs, 
   const rbx = rbxName ? await lookupRoblox(rbxName).catch(() => null) : null;
   const roblox = rbxName ? { name: rbx?.name || rbxName, avatar: rbx?.avatar || null, verified: Boolean(character || linked?.verified) } : null;
   if (Date.now() >= nextRefresh) refreshStats(); // contador de Discord (no se espera)
+  const shiftActions = shift ? await panel.listShiftActions(d, shift.id) : [];
   return {
-    now: Date.now(), user, modo: dbMode, staff, character, account, shift, stats: week, fines, arrests, transactions, roblox,
+    now: Date.now(), user, modo: dbMode, staff, character, account, shift, shiftActions, stats: week, fines, arrests, transactions, roblox,
     shifts, ranking: ranking.map(({ _id, ...r }) => ({ ...r, yo: _id === user.id })), online: stats.online, erlc: await erlcStatus(),
     solicitud, jobs, jobInfo: publicJobs(JOBS), shiftRules: SHIFT, money: panel.MONEY, options: OPTIONS, pay, sueldos, jobImg,
   };
@@ -1012,6 +1013,9 @@ post('/banco/transferir', async ({ user, db: d }, req) => panel.transfer(d, user
 post('/multas/pagar', async ({ user, db: d }, req) => ({ account: await panel.payFine(d, user.id, req.body?.id) }));
 post('/turno/iniciar', async ({ user, db: d, jobs }, req) => ({ shift: await panel.startShift(d, user.id, req.body?.job, { jobs: JOBS, allowed: jobs, verify: verifyInGame }) }));
 post('/turno/terminar', async ({ user, db: d }) => ({ result: await panel.endShift(d, user.id, { jobs: JOBS }) }));
+// Botones de acciones del trabajo mientras está en servicio
+post('/turno/accion', async ({ user, db: d }, req) => panel.logAction(d, user.id, req.body?.accion));
+post('/turno/deshacer', async ({ user, db: d }) => panel.undoAction(d, user.id));
 post('/policia/multa', async ({ user, db: d, jobs }, req) => {
   if (!jobs.includes('transito')) throw new panel.PanelError(403, 'Solo la ATT puede poner multas.');
   return { fine: await panel.issueFine(d, user.id, req.body || {}) };

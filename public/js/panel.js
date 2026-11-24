@@ -44,6 +44,7 @@
     logout: '<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/>',
     grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
     image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
+    undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
     link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
   };
   const ico = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || ''}</svg>`;
@@ -451,7 +452,7 @@
         <div class="pn-work-main">
           <span class="pn-state ${on ? 'on' : ''}"><i></i>${on ? `En servicio · ${esc(j.name)}` : 'Fuera de servicio'}</span>
           <h2>Panel de <em>trabajo</em></h2>
-          <p>Toca ${S.jobs.length > 1 ? 'el botón de tu trabajo' : 'tu trabajo'} cuando entres al servidor de ER:LC. Al salir, toca <b>Terminar turno</b> y tu tiempo queda registrado. El sueldo se cobra con <b>/cobrar-salario</b> en el bot.</p>
+          <p>${on ? 'Estás en servicio. Abajo toca cada cosa que vayas haciendo y, cuando salgas del servidor, toca <b>Terminar turno</b>.' : `Toca ${S.jobs.length > 1 ? 'el botón de tu trabajo' : 'tu trabajo'} cuando entres al servidor de ER:LC. Al salir, toca <b>Terminar turno</b> y tu tiempo queda registrado.`} El sueldo se cobra con <b>/cobrar-salario</b> en el bot.</p>
           ${controls}
         </div>
         <div class="pn-work-side">
@@ -459,12 +460,36 @@
           <div class="pn-stat"><span class="pn-stat-ico gold">${ico('history')}</span><b data-week>${hm(S.stats.minutos)}</b><small>Esta semana</small></div>
         </div>
       </section>
+      ${on ? acciones(on.job) : ''}
       <div class="pn-bigtabs">
         <button type="button" class="${ui.work === 'historial' ? 'on' : ''}" data-act="work" data-tab="historial">${ico('history')}<span><b>Historial</b><small>Tus servicios</small></span></button>
         <button type="button" class="${ui.work === 'ranking' ? 'on' : ''}" data-act="work" data-tab="ranking">${ico('trophy')}<span><b>Ranking</b><small>Estadísticas</small></span></button>
       </div>
       ${ui.work === 'ranking' ? ranking() : historial()}
       ${[...POLICE, 'transito'].includes(S.shift?.job) ? policeTools() : ''}`;
+  }
+
+  // Acciones del trabajo mientras está en servicio (cada trabajo tiene las suyas)
+  const actionsOf = (k) => jobInfo(k).actions || [];
+  const actionInfo = (k, id) => actionsOf(k).find((a) => a.id === id) || { icon: '✅', label: id };
+  function acciones(k) {
+    const j = jobInfo(k);
+    const done = S.shiftActions || [];
+    const count = (id) => done.filter((x) => x.action === id).length;
+    const log = done.length ? `<div class="pn-acts-log">
+        <div class="pn-acts-loghead"><b>Lo que hiciste en este turno</b><button class="pn-btn ghost sm" type="button" data-act="deshacer">${ico('undo')}Deshacer la última</button></div>
+        <ul class="pn-acts-list">${done.slice(0, 8).map((x) => { const a = actionInfo(k, x.action); return `<li><span>${a.icon}</span><b>${esc(a.label)}</b><small>${hora(x.created_at)}</small></li>`; }).join('')}</ul>
+        ${done.length > 8 ? `<p class="pn-muted">y ${done.length - 8} más</p>` : ''}
+      </div>` : '';
+    return `<section class="pn-box pn-acts" data-color="${esc(j.color)}">
+        <div class="pn-acts-head"><h3 class="pn-h3">${j.icon} Acciones de ${esc(j.name)}</h3><span class="pn-tag">${done.length} en este turno</span></div>
+        <p class="pn-muted">Toca cada cosa que hagas en el servidor. Queda guardada en tu turno y en tu historial.</p>
+        <div class="pn-actbtns">${actionsOf(k).map((a) => {
+          const n = count(a.id);
+          return `<button class="pn-actbtn" type="button" data-act="accion" data-accion="${esc(a.id)}"><span class="pn-actbtn-ico">${a.icon}</span><b>${esc(a.label)}</b>${n ? `<i>×${n}</i>` : ''}</button>`;
+        }).join('')}</div>
+        ${log}
+      </section>`;
   }
 
   // Foto de cada trabajo: la que subió un admin o el dibujo de /img/trabajos
@@ -480,7 +505,8 @@
     const list = S.shifts.length ? `<ul class="pn-list">${S.shifts.map((s) => {
       const j = jobInfo(s.job);
       return `<li><span class="pn-li-ico job" data-color="${esc(j.color)}">${j.icon}</span>
-        <div><b>${esc(j.name)}</b><small>${fecha(s.started_at)} · ${hora(s.started_at)} – ${hora(s.ended_at)}</small></div>
+        <div><b>${esc(j.name)}</b><small>${fecha(s.started_at)} · ${hora(s.started_at)} – ${hora(s.ended_at)}</small>
+          ${Object.keys(s.acciones || {}).length ? `<span class="pn-actchips">${Object.entries(s.acciones).map(([id, n]) => { const a = actionInfo(s.job, id); return `<span title="${esc(a.label)}">${a.icon} ${n}</span>`; }).join('')}</span>` : ''}</div>
         <div class="pn-li-r"><span class="pn-tag">${hm(s.minutes)}</span></div></li>`;
     }).join('')}</ul>` : '<div class="pn-empty soft"><b>Sin resultados</b><p>No hay servicios registrados</p></div>';
     return `<section class="pn-box"><h3 class="pn-h3">Historial de servicios</h3><p class="pn-muted">Tus últimos turnos terminados</p>${list}</section>`;
@@ -1021,9 +1047,19 @@
         toast('Turno iniciado. ¡Buen trabajo!');
         ui.activity = null;
         await refresh();
+      } else if (act === 'accion') {
+        const r = await api('/api/panel/turno/accion', { accion: b.dataset.accion });
+        S.shiftActions = r.actions;
+        toast(`${r.action.icon} ${r.action.label}: registrado`);
+        render();
+      } else if (act === 'deshacer') {
+        const r = await api('/api/panel/turno/deshacer', {});
+        S.shiftActions = r.actions;
+        toast('Listo: se quitó la última acción.');
+        render();
       } else if (act === 'terminar') {
         const r = (await api('/api/panel/turno/terminar', {})).result;
-        toast(`Turno de ${hm(r.minutes)} terminado y registrado.`);
+        toast(`Turno de ${hm(r.minutes)} terminado y registrado${r.acciones ? ` (${r.acciones} acción${r.acciones === 1 ? '' : 'es'})` : ''}.`);
         await refresh();
       } else if (act === 'comprobar') {
         const r = await api('/api/roblox/comprobar', {});

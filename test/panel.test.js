@@ -86,7 +86,7 @@ test('turnos: uno a la vez, solo con el rol, y solo registran el tiempo (el pago
   assert.equal(s.job, 'policia');
   await rejects(() => P.startShift(db, POLI.id, 'policia', { jobs: JOBS, allowed: ['policia'], now: NOW + 1 }), 409, /abierto/);
   const end = await P.endShift(db, POLI.id, { jobs: JOBS, now: NOW + 90 * 60_000 });
-  assert.deepEqual(end, { job: 'policia', name: 'Policía Nacional', minutes: 90, paid: 0 });
+  assert.deepEqual(end, { job: 'policia', name: 'Policía Nacional', minutes: 90, paid: 0, acciones: 0 });
   assert.equal((await P.getAccount(db, POLI.id)).banco, P.MONEY.startBanco, 'no paga nada');
   await rejects(() => P.endShift(db, POLI.id, { jobs: JOBS, now: NOW }), 409);
   await P.startShift(db, POLI.id, 'policia', { jobs: JOBS, allowed: ['policia'], now: NOW });
@@ -289,4 +289,37 @@ test('fotos de los trabajos: dibujo de fábrica o la que suben los admins', asyn
   assert.equal((await M.getJobImage(db, 'policia')).mime, 'image/png');
   await M.removeJobImage(db, 'policia');
   assert.equal((await M.jobImages(db, keys)).policia, '/img/trabajos/policia.svg', 'al quitarla vuelve el dibujo');
+});
+
+test('acciones del turno: cada trabajo las suyas, con pausa, deshacer y en el historial', async () => {
+  const { JOB_ACTIONS } = await import('../lib/jobs.js');
+  // La Policía Nacional, Aeronaval y Senafront no hacen lo mismo
+  const ids = (k) => JOB_ACTIONS[k].map((a) => a.id).sort().join();
+  assert.notEqual(ids('policia'), ids('aeronaval'));
+  assert.notEqual(ids('policia'), ids('senafront'));
+  assert.notEqual(ids('aeronaval'), ids('senafront'));
+  assert.ok(JOB_ACTIONS.bomberos.some((a) => a.id === 'incendio'), 'los bomberos apagan incendios');
+  for (const list of Object.values(JOB_ACTIONS)) assert.equal(new Set(list.map((a) => a.id)).size, list.length, 'sin repetidos');
+
+  const db = await fresh();
+  await citizen(db, ANA);
+  const jobs = { bomberos: { name: 'Bomberos' }, policia: { name: 'Policía' } };
+  await rejects(() => P.logAction(db, ANA.id, 'incendio', { now: NOW }), 409, /inicia tu turno/);
+  await P.startShift(db, ANA.id, 'bomberos', { jobs, allowed: ['bomberos'], now: NOW });
+  await rejects(() => P.logAction(db, ANA.id, 'patrullaje', { now: NOW }), 400, /no es de tu trabajo/);
+  const r1 = await P.logAction(db, ANA.id, 'incendio', { now: NOW + 1000 });
+  assert.equal(r1.action.label, 'Apagar incendio');
+  await rejects(() => P.logAction(db, ANA.id, 'rescate', { now: NOW + 2000 }), 429, /Espera/);
+  await P.logAction(db, ANA.id, 'rescate', { now: NOW + 5000 });
+  const r3 = await P.logAction(db, ANA.id, 'incendio', { now: NOW + 9000 });
+  assert.deepEqual(r3.actions.map((a) => a.action), ['incendio', 'rescate', 'incendio'], 'la más nueva primero');
+  const u = await P.undoAction(db, ANA.id);
+  assert.deepEqual(u.actions.map((a) => a.action), ['rescate', 'incendio']);
+  await P.logAction(db, ANA.id, 'incendio', { now: NOW + 13000 });
+  const end = await P.endShift(db, ANA.id, { jobs, now: NOW + 30 * 60_000 });
+  assert.equal(end.acciones, 3);
+  await rejects(() => P.undoAction(db, ANA.id), 409);
+  const [h] = await P.listShifts(db, ANA.id);
+  assert.deepEqual(h.acciones, { incendio: 2, rescate: 1 });
+  assert.equal(h.id, undefined, 'no se manda el id interno');
 });
