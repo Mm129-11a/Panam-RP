@@ -90,7 +90,7 @@ const ipOf = (req) => {
   return ip;
 };
 app.use(securityHeaders({ https: HTTPS }));
-const PANEL_POSTS = ['/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/policia/multa', '/policia/arresto', '/tienda/comprar', '/justicia/denuncia', '/justicia/juicio', '/admin/catalogo/guardar', '/admin/catalogo/quitar'];
+const PANEL_POSTS = ['/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/policia/multa', '/policia/arresto', '/tienda/comprar', '/justicia/denuncia', '/justicia/juicio', '/admin/catalogo/guardar', '/admin/catalogo/quitar', '/admin/trabajo-foto', '/admin/trabajo-foto/quitar'];
 app.use(methodGuard(['/logout', '/api/solicitud', '/api/discord/interactions', '/api/roblox/vincular', '/api/roblox/comprobar', ...PANEL_POSTS.map((p) => `/api/panel${p}`)]));
 app.use(rateLimit({ windowMs: 60_000, max: 300, keyFn: ipOf }));
 
@@ -971,10 +971,11 @@ const post = (p, handler) => app.post(`/api/panel${p}`, panelLimit, panelWriteLi
 
 app.get('/api/panel/estado', panelLimit, panelRoute(async ({ user, db: d, jobs, roles, staff }) => {
   const since = weekAgo();
-  const [character, account, shift, week, fines, arrests, transactions, shifts, ranking, linked, salaries] = await Promise.all([
+  const [character, account, shift, week, fines, arrests, transactions, shifts, ranking, linked, salaries, jobImg] = await Promise.all([
     panel.getCharacter(d, user.id), panel.getAccount(d, user.id), panel.activeShift(d, user.id),
     panel.shiftStats(d, user.id, since), panel.listFines(d, user.id), panel.listArrests(d, user.id), panel.listTransactions(d, user.id),
     panel.listShifts(d, user.id), panel.shiftRanking(d, since), panel.getUserRoblox(d, user.id), panel.listSalaries(d),
+    market.jobImages(d, Object.keys(JOBS)),
   ]);
   // Cuánto gana cada trabajo y la persona (lo pone un admin con /salario-configurar del bot)
   const mine = salaries.filter((x) => (roles || []).includes(x.role_id));
@@ -990,7 +991,7 @@ app.get('/api/panel/estado', panelLimit, panelRoute(async ({ user, db: d, jobs, 
   return {
     now: Date.now(), user, modo: dbMode, staff, character, account, shift, stats: week, fines, arrests, transactions, roblox,
     shifts, ranking: ranking.map(({ _id, ...r }) => ({ ...r, yo: _id === user.id })), online: stats.online, erlc: await erlcStatus(),
-    solicitud, jobs, jobInfo: publicJobs(JOBS), shiftRules: SHIFT, money: panel.MONEY, options: OPTIONS, pay, sueldos,
+    solicitud, jobs, jobInfo: publicJobs(JOBS), shiftRules: SHIFT, money: panel.MONEY, options: OPTIONS, pay, sueldos, jobImg,
   };
 }));
 
@@ -1144,6 +1145,23 @@ app.post('/api/panel/admin/catalogo/guardar', panelLimit, panelWriteLimit, expre
   await d.run("INSERT INTO bot_logs (tipo, actor_id, detalle, created_at) VALUES ('catalogo', $1, $2, $3)", [user.id, `${req.body?.id ? 'Editó' : 'Agregó'} #${id} ${String(req.body?.nombre || '').slice(0, 60)}`, Date.now()]);
   return { id, catalog: await market.listCatalog(d) };
 }, { write: true }));
+// Fotos de los trabajos (admins): reemplazan el dibujo de cada trabajo en el panel
+app.post('/api/panel/admin/trabajo-foto', panelLimit, panelWriteLimit, express.json({ limit: '1300kb' }), panelRoute(async ({ user, db: d, staff }, req) => {
+  needAdmin(staff);
+  const job = String(req.body?.job || '');
+  if (!Object.hasOwn(JOBS, job)) throw new panel.PanelError(400, 'Ese trabajo no existe.');
+  await market.setJobImage(d, job, req.body?.foto);
+  await d.run("INSERT INTO bot_logs (tipo, actor_id, detalle, created_at) VALUES ('catalogo', $1, $2, $3)", [user.id, `Foto del trabajo ${job}`, Date.now()]);
+  return { jobImg: await market.jobImages(d, Object.keys(JOBS)) };
+}, { write: true }));
+post('/admin/trabajo-foto/quitar', async ({ user, db: d, staff }, req) => {
+  needAdmin(staff);
+  const job = String(req.body?.job || '');
+  if (!Object.hasOwn(JOBS, job)) throw new panel.PanelError(400, 'Ese trabajo no existe.');
+  await market.removeJobImage(d, job);
+  await d.run("INSERT INTO bot_logs (tipo, actor_id, detalle, created_at) VALUES ('catalogo', $1, $2, $3)", [user.id, `Quitó la foto del trabajo ${job}`, Date.now()]);
+  return { jobImg: await market.jobImages(d, Object.keys(JOBS)) };
+});
 post('/admin/catalogo/quitar', async ({ user, db: d, staff }, req) => {
   needAdmin(staff);
   await market.removeItem(d, req.body?.id);
@@ -1164,6 +1182,16 @@ app.get('/img/vehiculo/:placa', async (req, res) => {
   const d = /^[A-Z0-9-]{3,12}$/.test(placa) ? await getDb() : null;
   const img = d ? await market.getVehicleImage(d, placa).catch(() => null) : null;
   if (!img) return res.status(404).end();
+  res.setHeader('Content-Type', img.mime);
+  res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.end(img.body);
+});
+app.get('/img/trabajo/:job', async (req, res) => {
+  const job = String(req.params.job || '');
+  const d = Object.hasOwn(JOBS, job) ? await getDb() : null;
+  const img = d ? await market.getJobImage(d, job).catch(() => null) : null;
+  if (!img) return res.redirect(302, `/img/trabajos/${Object.hasOwn(JOBS, job) ? job : 'policia'}.svg`);
   res.setHeader('Content-Type', img.mime);
   res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
   res.setHeader('X-Content-Type-Options', 'nosniff');

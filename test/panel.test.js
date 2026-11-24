@@ -273,3 +273,20 @@ test('vincular Roblox con Discord: toma la cuenta de Roblox de las conexiones', 
   assert.equal(robloxFromConnections([{ type: 'roblox', id: 'abc', name: 'Ana_RP', verified: true }]), null, 'ID raro no cuenta');
   assert.deepEqual(robloxFromConnections([{ type: 'twitch', id: '9', name: 'a', verified: true }, { type: 'roblox', id: '4815162342', name: 'Ana_RP', verified: true }]), { id: '4815162342', name: 'Ana_RP' });
 });
+
+test('fotos de los trabajos: dibujo de fábrica o la que suben los admins', async () => {
+  const M = await import('../lib/market.js');
+  const db = await fresh();
+  const keys = ['policia', 'bomberos'];
+  assert.deepEqual(await M.jobImages(db, keys), { policia: '/img/trabajos/policia.svg', bomberos: '/img/trabajos/bomberos.svg' });
+  await rejects(() => M.setJobImage(db, 'policia', 'data:image/gif;base64,R0lGODlh'), 400);
+  await rejects(() => M.setJobImage(db, 'policia', `data:image/png;base64,${Buffer.alloc(300, 1).toString('base64')}`), 400, /válida/);
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(200, 1)]).toString('base64');
+  await M.setJobImage(db, 'policia', `data:image/png;base64,${png}`, NOW);
+  const imgs = await M.jobImages(db, keys);
+  assert.equal(imgs.policia, `/img/trabajo/policia?v=${NOW}`);
+  assert.equal(imgs.bomberos, '/img/trabajos/bomberos.svg');
+  assert.equal((await M.getJobImage(db, 'policia')).mime, 'image/png');
+  await M.removeJobImage(db, 'policia');
+  assert.equal((await M.jobImages(db, keys)).policia, '/img/trabajos/policia.svg', 'al quitarla vuelve el dibujo');
+});

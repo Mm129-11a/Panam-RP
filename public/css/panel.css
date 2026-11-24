@@ -692,3 +692,38 @@ a.pn-stat:hover{border-color:#3a4358;transform:translateY(-2px)}
 .pn-item strong{color:#93c5fd}
 .pn-tabs button.on,.pn-tab.on{border-color:rgba(225,29,46,.6);background:rgba(225,29,46,.12);color:#fff}
 .pn-ok{color:#93c5fd}
+
+/* ═══ Fotos de los trabajos (dibujo de fábrica o la que suben los admins) ═══ */
+.pn-jobbtns{grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.pn-jobbtn{flex-direction:column;align-items:stretch;gap:0;padding:0;overflow:hidden;border-radius:18px}
+.pn-jobbtn-img{position:relative;display:block;aspect-ratio:2/1;overflow:hidden;background:#0b0c11}
+.pn-jobbtn-img img{display:block;width:100%;height:100%;object-fit:cover;transition:transform .35s ease}
+.pn-jobbtn-img::after{content:"";position:absolute;inset:auto 0 0 0;height:45%;background:linear-gradient(0deg,color-mix(in srgb,var(--job) 22%,#0e0f14),transparent)}
+.pn-jobbtn:hover .pn-jobbtn-img img{transform:scale(1.05)}
+.pn-jobbtn-img .pn-pay{position:absolute;top:10px;right:10px;z-index:1;box-shadow:0 6px 16px -6px rgba(0,0,0,.7)}
+.pn-jobbtn-txt{display:flex;align-items:center;gap:12px;padding:12px 14px 14px}
+.pn-jobbtn-txt > span:last-child{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pn-jobbtn-ico{width:40px;height:40px;font-size:20px;margin-top:-30px;position:relative;z-index:1;box-shadow:0 8px 18px -8px rgba(0,0,0,.8),0 0 0 3px #0e0f14}
+/* en servicio: la foto del trabajo de fondo a la derecha */
+.pn-work-on .pn-work-bg{position:absolute;top:0;right:0;width:62%;height:100%;object-fit:cover;opacity:.5;pointer-events:none;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 55%);mask-image:linear-gradient(90deg,transparent,#000 55%)}
+.pn-work-on .pn-work-main,.pn-work-on .pn-work-side{position:relative;z-index:1}
+/* inicio: la tarjeta de Trabajos con su foto */
+.pn-cat.has-img .pn-cat-img{position:absolute;top:0;right:0;width:72%;height:100%;object-fit:cover;opacity:.6;pointer-events:none;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 60%);mask-image:linear-gradient(90deg,transparent,#000 60%);transition:transform .35s ease,opacity .2s}
+.pn-cat.has-img:hover .pn-cat-img{transform:scale(1.05);opacity:.75}
+.pn-cat.has-img > :not(.pn-cat-img){position:relative;z-index:1}
+.pn-cat.has-img .pn-cat-go{position:absolute;z-index:1}
+/* admin: fotos de cada trabajo */
+.pn-bigtabs.four{grid-template-columns:repeat(4,1fr)}
+.pn-jobfotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-top:12px}
+.pn-jobfoto{--job:#3b82f6;display:flex;flex-direction:column;gap:10px;padding:10px 10px 12px;border-radius:16px;border:1px solid color-mix(in srgb,var(--job) 40%,transparent);background:var(--p-card2)}
+.pn-jobfoto img{display:block;width:100%;aspect-ratio:2/1;object-fit:cover;border-radius:11px;background:#0b0c11}
+.pn-jobfoto > div:first-of-type{display:flex;flex-direction:column;gap:2px;padding:0 4px}
+.pn-jobfoto small{color:var(--muted);font-size:12px}
+.pn-jobfoto .pn-row{padding:0 4px;gap:8px}
+.pn-jobfoto label.pn-btn{cursor:pointer}
+.pn-jobfoto label.pn-btn:focus-within{outline:2px solid #fff;outline-offset:2px}
+@media (max-width:760px){.pn-bigtabs.four{grid-template-columns:repeat(2,1fr)}.pn-work-on .pn-work-bg{width:100%;opacity:.28}}
+@media (prefers-reduced-motion:reduce){.pn-jobbtn-img img,.pn-cat.has-img .pn-cat-img{transition:none}}
+.pn-jobbtn > span.pn-jobbtn-txt{flex-direction:row;align-items:center;gap:12px;flex:none;text-align:left}

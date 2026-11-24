@@ -43,6 +43,7 @@
     back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
     logout: '<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/>',
     grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+    image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
     link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
   };
   const ico = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || ''}</svg>`;
@@ -100,7 +101,7 @@
     tienda: () => ['Casas y <em>mis carros</em>', 'Compra casas con tu banco. Tus carros son los que registras con /vehiculo en el bot'],
     justicia: () => ['Denuncias y <em>juicios</em>', 'Lo que mandes les llega por mensaje privado a los jueces'],
     negro: () => ['Mercado negro', 'Pagas en efectivo y nadie se entera'],
-    admin: () => ['<em>Administración</em>', S.staff?.admin ? 'Admins: stock de casas y mercado negro, base de datos y casos' : 'Moderadores: base de datos y casos'],
+    admin: () => ['<em>Administración</em>', S.staff?.admin ? 'Admins: stock, fotos de los trabajos, base de datos y casos' : 'Moderadores: base de datos y casos'],
   };
   function renderHead(view) {
     const [title, sub] = TITLES[view]();
@@ -157,8 +158,8 @@
   }
 
   // ─── Inicio ───
-  const cat = (href, color, icon, title, text) => `<a class="pn-cat ${color}" href="${href}">
-      <span class="pn-cat-ico">${ico(icon)}</span><b>${title}</b><small>${text}</small><span class="pn-cat-go">${ico('arrow')}</span></a>`;
+  const cat = (href, color, icon, title, text, img = '') => `<a class="pn-cat ${color} ${img ? 'has-img' : ''}" href="${href}">
+      ${img ? `<img class="pn-cat-img" src="${esc(img)}" alt="" loading="lazy">` : ''}<span class="pn-cat-ico">${ico(icon)}</span><b>${title}</b><small>${text}</small><span class="pn-cat-go">${ico('arrow')}</span></a>`;
 
   function viewInicio() {
     return `${S.character ? '' : `<div class="pn-note info">${ico('id')}<div><b>Crea tu cédula</b> para abrir tu cuenta del banco y poder trabajar.</div><a class="pn-btn gold" href="#perfil">Crear cédula</a></div>`}
@@ -176,7 +177,7 @@
       <h3 class="pn-sec"><span>${ico('grid')}</span>Categorías</h3>
       <div class="pn-cats">
         ${cat('#perfil', 'green', 'user', 'Mi perfil', 'Cédula, banco, multas y antecedentes')}
-        ${hasWork() ? cat('#trabajos', 'blue', 'power', 'Servicio Trabajos', S.jobs.length === 1 ? `Tu trabajo: ${jobInfo(S.jobs[0]).name}` : 'Inicia y termina tus turnos') : ''}
+        ${hasWork() ? cat('#trabajos', 'blue', 'power', 'Servicio Trabajos', S.jobs.length === 1 ? `Tu trabajo: ${jobInfo(S.jobs[0]).name}` : 'Inicia y termina tus turnos', jobImg(S.shift?.job || S.jobs[0])) : ''}
         ${cat('#banco', 'gold', 'bank', 'Banco', 'Depósitos, retiros y transferencias')}
         ${cat('#tienda', 'purple', 'home', 'Casas y mis carros', 'Inmobiliaria y tus vehículos')}
         ${cat('#negro', 'dark', 'mask', 'Mercado negro', 'Se paga en efectivo')}
@@ -440,11 +441,13 @@
       controls = `<div class="pn-jobbtns">${S.jobs.map((k) => {
         const jj = jobInfo(k);
         return `<button class="pn-jobbtn" type="button" data-act="iniciar" data-job="${esc(k)}" data-color="${esc(jj.color)}">
-          <span class="pn-jobbtn-ico">${jj.icon}</span><span><b>${esc(jj.name)}</b><small>${ico('power')}Iniciar turno</small></span>${payTag(k)}</button>`;
+          <span class="pn-jobbtn-img"><img src="${esc(jobImg(k))}" alt="" loading="lazy">${payTag(k)}</span>
+          <span class="pn-jobbtn-txt"><span class="pn-jobbtn-ico">${jj.icon}</span><span><b>${esc(jj.name)}</b><small>${ico('power')}Iniciar turno</small></span></span></button>`;
       }).join('')}</div>`;
     }
     const r = S.shiftRules;
-    return `<section class="pn-work" ${j ? `data-color="${esc(j.color)}"` : ''}>
+    return `<section class="pn-work ${on ? 'pn-work-on' : ''}" ${j ? `data-color="${esc(j.color)}"` : ''}>
+        ${on ? `<img class="pn-work-bg" src="${esc(jobImg(on.job))}" alt="">` : ''}
         <div class="pn-work-main">
           <span class="pn-state ${on ? 'on' : ''}"><i></i>${on ? `En servicio · ${esc(j.name)}` : 'Fuera de servicio'}</span>
           <h2>Panel de <em>trabajo</em></h2>
@@ -463,6 +466,9 @@
       ${ui.work === 'ranking' ? ranking() : historial()}
       ${[...POLICE, 'transito'].includes(S.shift?.job) ? policeTools() : ''}`;
   }
+
+  // Foto de cada trabajo: la que subió un admin o el dibujo de /img/trabajos
+  const jobImg = (k) => S.jobImg?.[k] || `/img/trabajos/${encodeURIComponent(k)}.svg`;
 
   // Lo que gana un trabajo (del bot: /salario-configurar)
   function payTag(k) {
@@ -719,9 +725,9 @@
 
   function viewAdmin() {
     if (!S.staff?.mod) return `<div class="pn-note warn">${ico('alert')}<div>Esta sección es solo para moderadores y admins.</div></div>`;
-    if (ui.adm === 'tienda' && !S.staff.admin) ui.adm = 'datos';
-    const tabs = [['datos', 'db', 'Base de datos', 'Buscar ciudadanos'], ['casos', 'scale', 'Casos', 'Denuncias y juicios'], ...(S.staff.admin ? [['tienda', 'store', 'Stock', 'Casas y mercado negro']] : [])];
-    const head = `<div class="pn-bigtabs ${tabs.length === 3 ? 'three' : ''}">${tabs.map(([k, i, t, sub]) => `<button type="button" class="${ui.adm === k ? 'on' : ''}" data-act="adm-tab" data-tab="${k}">${ico(i)}<span><b>${t}</b><small>${sub}</small></span></button>`).join('')}</div>`;
+    if ((ui.adm === 'tienda' || ui.adm === 'fotos') && !S.staff.admin) ui.adm = 'datos';
+    const tabs = [['datos', 'db', 'Base de datos', 'Buscar ciudadanos'], ['casos', 'scale', 'Casos', 'Denuncias y juicios'], ...(S.staff.admin ? [['tienda', 'store', 'Stock', 'Casas y mercado negro'], ['fotos', 'image', 'Fotos', 'De cada trabajo']] : [])];
+    const head = `<div class="pn-bigtabs ${tabs.length === 3 ? 'three' : tabs.length === 4 ? 'four' : ''}">${tabs.map(([k, i, t, sub]) => `<button type="button" class="${ui.adm === k ? 'on' : ''}" data-act="adm-tab" data-tab="${k}">${ico(i)}<span><b>${t}</b><small>${sub}</small></span></button>`).join('')}</div>`;
     if (ui.adm === 'casos') {
       const C = ui.admCases;
       const list = !C ? '<p class="pn-muted">Cargando…</p>' : C.length ? `<ul class="pn-list">${C.map((c) => {
@@ -733,6 +739,22 @@
           <div class="pn-li-r"><span class="pn-tag ${cls}">${txt}</span></div></li>`;
       }).join('')}</ul>` : empty('scale', 'No hay casos todavía');
       return `${head}<section class="pn-box"><h3 class="pn-h3">Todos los casos</h3><p class="pn-muted">Se actualiza solo cada 15 segundos.</p>${list}</section>`;
+    }
+    if (ui.adm === 'fotos') {
+      const keys = Object.keys(S.jobInfo || {});
+      return `${head}<section class="pn-box"><h3 class="pn-h3">Fotos de los trabajos</h3>
+        <p class="pn-muted">Salen en Servicio Trabajos y en el inicio. Sube una captura de su patrulla, helicóptero, camión… de su servidor de ER:LC. Si quitas la foto, vuelve el dibujo.</p>
+        <div class="pn-jobfotos">${keys.map((k) => {
+          const jj = jobInfo(k);
+          const custom = /^\/img\/trabajo\//.test(S.jobImg?.[k] || '');
+          return `<article class="pn-jobfoto" data-color="${esc(jj.color)}">
+            <img src="${esc(jobImg(k))}" alt="">
+            <div><b>${jj.icon} ${esc(jj.name)}</b><small>${custom ? 'Foto subida' : 'Dibujo de fábrica'}</small></div>
+            <div class="pn-row">
+              <label class="pn-btn gold sm">${ico('image')}${custom ? 'Cambiar' : 'Subir foto'}<input type="file" accept="image/*" data-jobfoto="${esc(k)}" hidden></label>
+              ${custom ? `<button class="pn-btn ghost sm" type="button" data-act="jobfoto-quitar" data-job="${esc(k)}">Quitar</button>` : ''}
+            </div></article>`;
+        }).join('')}</div></section>`;
     }
     if (ui.adm === 'tienda') {
       const items = ui.admCat;
@@ -790,6 +812,16 @@
     });
   }
   document.addEventListener('change', (ev) => {
+    const jf = ev.target.closest('input[data-jobfoto]');
+    if (jf) {
+      // Foto de un trabajo (admins): se achica aquí y se sube
+      const job = jf.dataset.jobfoto;
+      readPhoto(jf.files?.[0])
+        .then((foto) => api('/api/panel/admin/trabajo-foto', { job, foto }))
+        .then((r) => { S.jobImg = r.jobImg; toast(`Foto de ${jobInfo(job).name} guardada.`); render(); })
+        .catch((e) => toast(e.message));
+      return;
+    }
     const inp = ev.target.closest('input[data-photo]');
     if (!inp) return;
     readPhoto(inp.files?.[0]).then((data) => { ui.photo = data; const box = inp.closest('.pn-photo'); const old = box.querySelector('img,span'); const im = new Image(); im.src = data; im.alt = ''; old ? old.replaceWith(im) : box.prepend(im); }).catch((e) => toast(e.message));
@@ -1000,6 +1032,12 @@
         await refresh();
       } else if (act === 'ficha') {
         await openFicha(b.dataset.cedula, b.dataset.admin === '1');
+      } else if (act === 'jobfoto-quitar') {
+        if (!window.confirm('¿Quitar la foto y volver al dibujo?')) return;
+        const r = await api('/api/panel/admin/trabajo-foto/quitar', { job: b.dataset.job });
+        S.jobImg = r.jobImg;
+        toast('Listo: vuelve el dibujo.');
+        render();
       } else if (act === 'item-quitar') {
         if (!window.confirm('¿Quitar este artículo de la venta?')) return;
         const r = await api('/api/panel/admin/catalogo/quitar', { id: Number(b.dataset.id) });
