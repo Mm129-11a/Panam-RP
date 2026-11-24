@@ -839,3 +839,28 @@ a.pn-stat:hover{border-color:#3a4358;transform:translateY(-2px)}
 .pn-av.av0{--av:#e11d2e}.pn-av.av1{--av:#2563eb}.pn-av.av2{--av:#7c3aed}.pn-av.av3{--av:#0891b2}.pn-av.av4{--av:#db2777}.pn-av.av5{--av:#ea580c}.pn-av.av6{--av:#16a34a}
 .tx-ok .tx-title{padding-right:0}
 .pn-cat.has-img b,.pn-cat.has-img small{text-shadow:0 1px 10px rgba(0,0,0,.65)}
+
+/* ═══ Pago móvil: tu número, Enviar / Cobrar y cobros ═══ */
+.pn-myphone{display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;border-radius:14px;border:1px dashed rgba(255,255,255,.18);background:rgba(0,0,0,.25);color:#fff;font:inherit;cursor:pointer;text-align:left}
+.pn-myphone small{color:var(--muted);font-size:12px;font-weight:600}
+.pn-myphone b{flex:1;font-size:20px;letter-spacing:1px}
+.pn-myphone svg{width:18px;height:18px;color:var(--muted)}
+.pn-myphone:hover{border-color:var(--b1)}
+.pn-send-btns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pn-send-btns .pn-btn{justify-content:center}
+.pn-cobros.in{border-color:rgba(225,29,46,.45);background:linear-gradient(160deg,rgba(225,29,46,.12),var(--p-card) 60%)}
+.pn-cobros li{align-items:center;gap:12px}
+.pn-cobro-r{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.pn-cobro-r strong{font-size:16px}
+.pn-cobro-r > span{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+@media (max-width:560px){.pn-cobros li{flex-wrap:wrap}.pn-cobro-r{width:100%;flex-direction:row;justify-content:space-between;align-items:center}}
+
+/* ═══ Cambiar de trabajo sin salir de turno (ATT ↔ Mecánico) ═══ */
+.pn-switch{--job:#a855f7;display:flex;align-items:center;gap:12px;width:100%;max-width:460px;margin-top:12px;padding:12px 14px;border-radius:16px;cursor:pointer;font:inherit;color:#fff;text-align:left;
+  border:1px solid color-mix(in srgb,var(--job) 55%,transparent);background:linear-gradient(135deg,color-mix(in srgb,var(--job) 28%,#0e0f14),#0e0f14 80%)}
+.pn-switch:hover{border-color:var(--job);box-shadow:0 10px 24px -14px var(--job)}
+.pn-switch:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.pn-switch > span:first-child{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;font-size:20px;background:linear-gradient(135deg,var(--job),color-mix(in srgb,var(--job) 55%,#000))}
+.pn-switch > span:nth-child(2){display:flex;flex-direction:column;gap:2px;flex:1}
+.pn-switch small{color:#c9ccd6;font-size:12px}
+.pn-switch > svg{width:20px;height:20px;color:var(--job)}

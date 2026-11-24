@@ -90,7 +90,7 @@ const ipOf = (req) => {
   return ip;
 };
 app.use(securityHeaders({ https: HTTPS }));
-const PANEL_POSTS = ['/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/turno/accion', '/turno/deshacer', '/policia/multa', '/policia/arresto', '/tienda/comprar', '/justicia/denuncia', '/justicia/juicio', '/admin/catalogo/guardar', '/admin/catalogo/quitar', '/admin/trabajo-foto', '/admin/trabajo-foto/quitar'];
+const PANEL_POSTS = ['/cedula', '/banco/mover', '/banco/transferir', '/multas/pagar', '/turno/iniciar', '/turno/terminar', '/turno/accion', '/turno/deshacer', '/turno/cambiar', '/banco/cobrar', '/banco/cobro/pagar', '/banco/cobro/rechazar', '/banco/cobro/cancelar', '/policia/multa', '/policia/arresto', '/tienda/comprar', '/justicia/denuncia', '/justicia/juicio', '/admin/catalogo/guardar', '/admin/catalogo/quitar', '/admin/trabajo-foto', '/admin/trabajo-foto/quitar'];
 app.use(methodGuard(['/logout', '/api/solicitud', '/api/discord/interactions', '/api/roblox/vincular', '/api/roblox/comprobar', ...PANEL_POSTS.map((p) => `/api/panel${p}`)]));
 app.use(rateLimit({ windowMs: 60_000, max: 300, keyFn: ipOf }));
 
@@ -893,6 +893,7 @@ function getDb() {
         const conn = DATABASE_URL ? await connectPostgres(DATABASE_URL) : await connectSqlite(path.join(os.tmpdir(), 'panama-rp-prueba.db'));
         await migrate(conn);
         db = conn;
+        panel.backfillPhones(conn).then((n) => n && console.log(`Números de celular del rol: ${n} nuevo(s)`)).catch((e) => console.error('[db] números:', e.message));
         console.log(DATABASE_URL ? 'Base de datos: Neon conectada' : 'Base de datos: MODO DE PRUEBA (falta DATABASE_URL; los datos se borran al reiniciar)');
       } catch (err) {
         console.error('[db] no se pudo conectar:', err.message);
@@ -989,8 +990,10 @@ app.get('/api/panel/estado', panelLimit, panelRoute(async ({ user, db: d, jobs, 
   const roblox = rbxName ? { name: rbx?.name || rbxName, avatar: rbx?.avatar || null, verified: Boolean(character || linked?.verified) } : null;
   if (Date.now() >= nextRefresh) refreshStats(); // contador de Discord (no se espera)
   const shiftActions = shift ? await panel.listShiftActions(d, shift.id) : [];
+  const telefono = character ? character.telefono || await panel.ensurePhone(d, user.id).catch(() => null) : null;
+  const cobros = account ? await panel.listRequests(d, user.id) : { entrantes: [], salientes: [] };
   return {
-    now: Date.now(), user, modo: dbMode, staff, character, account, shift, shiftActions, stats: week, fines, arrests, transactions, roblox,
+    now: Date.now(), user, modo: dbMode, staff, character, account, shift, shiftActions, telefono, cobros, switches: panel.SWITCHES, stats: week, fines, arrests, transactions, roblox,
     shifts, ranking: ranking.map(({ _id, ...r }) => ({ ...r, yo: _id === user.id })), online: stats.online, erlc: await erlcStatus(),
     solicitud, jobs, jobInfo: publicJobs(JOBS), shiftRules: SHIFT, money: panel.MONEY, options: OPTIONS, pay, sueldos, jobImg,
   };
@@ -1010,7 +1013,41 @@ post('/cedula', async ({ user, db: d }, req) => {
 });
 post('/banco/mover', async ({ user, db: d }, req) => ({ account: await panel.moveMoney(d, user.id, req.body?.tipo, req.body?.monto) }));
 post('/banco/transferir', async ({ user, db: d }, req) => panel.transfer(d, user.id, req.body?.cedula, req.body?.monto, req.body?.nota));
-// Enviar dinero: los recientes y buscar por nombre, cédula o usuario de Roblox
+// Cobros: pedirle dinero a alguien (le llega un DM y lo paga desde su panel)
+post('/banco/cobrar', async ({ user, db: d }, req) => {
+  const r = await panel.requestMoney(d, user.id, req.body?.cedula, req.body?.monto, req.body?.concepto);
+  notifyMoney(d, r.toId, user.id, 'cobro', r).catch((e) => console.error('[cobro] aviso:', e.message));
+  const { toId, ...out } = r;
+  return out;
+});
+post('/banco/cobro/pagar', async ({ user, db: d }, req) => {
+  const r = await panel.payRequest(d, user.id, req.body?.id);
+  notifyMoney(d, r.fromId, user.id, 'pagado', r).catch((e) => console.error('[cobro] aviso:', e.message));
+  const { fromId, ...out } = r;
+  return out;
+});
+post('/banco/cobro/rechazar', async ({ user, db: d }, req) => {
+  const r = await panel.declineRequest(d, user.id, req.body?.id);
+  notifyMoney(d, r.fromId, user.id, 'rechazado', r).catch((e) => console.error('[cobro] aviso:', e.message));
+  return { ok: true };
+});
+post('/banco/cobro/cancelar', async ({ user, db: d }, req) => panel.cancelRequest(d, user.id, req.body?.id));
+// Aviso por DM de los cobros (como la notificación del celular)
+async function notifyMoney(d, toId, fromId, kind, r) {
+  if (!bot) return;
+  const c = await panel.getCharacter(d, fromId);
+  const who = c ? `${c.nombre} ${c.apellidos}` : 'Alguien';
+  const monto = `$${Number(r.monto).toLocaleString('es-PA')}`;
+  const embed = kind === 'cobro'
+    ? { title: `💸 ${who} te está cobrando ${monto}`, description: `${r.concepto ? `**Concepto:** ${r.concepto}\n` : ''}Págalo o recházalo en el panel → Banco.`, color: 0xe11d2e }
+    : kind === 'pagado'
+      ? { title: `✅ ${who} te pagó ${monto}`, description: `Ya está en tu banco.${r.nota ? `\n${r.nota}` : ''}`, color: 0x2563eb }
+      : { title: `✖️ ${who} rechazó tu cobro de ${monto}`, color: 0x6b7280 };
+  embed.footer = { text: 'Panamá RP · Banco de la web' };
+  embed.timestamp = new Date().toISOString();
+  await bot.dm(toId, { embeds: [embed], components: [{ type: 1, components: [{ type: 2, style: 5, label: 'Abrir el banco', url: `${BASE_URL}/panel#banco` }] }] });
+}
+// Enviar dinero: los recientes y buscar por nombre, cédula, número o usuario de Roblox
 app.get('/api/panel/banco/contactos', panelLimit, panelRoute(async ({ user, db: d }, req) => {
   const q = String(req.query.q || '');
   return q.trim().length >= 2 ? { resultados: await panel.findPayees(d, user.id, q) } : { recientes: await panel.recentPayees(d, user.id) };
@@ -1018,6 +1055,8 @@ app.get('/api/panel/banco/contactos', panelLimit, panelRoute(async ({ user, db: 
 post('/multas/pagar', async ({ user, db: d }, req) => ({ account: await panel.payFine(d, user.id, req.body?.id) }));
 post('/turno/iniciar', async ({ user, db: d, jobs }, req) => ({ shift: await panel.startShift(d, user.id, req.body?.job, { jobs: JOBS, allowed: jobs, verify: verifyInGame }) }));
 post('/turno/terminar', async ({ user, db: d }) => ({ result: await panel.endShift(d, user.id, { jobs: JOBS }) }));
+// ATT ↔ Mecánico sin salir de turno
+post('/turno/cambiar', async ({ user, db: d, jobs }, req) => ({ result: await panel.switchShift(d, user.id, String(req.body?.job || ''), { jobs: JOBS, allowed: jobs }) }));
 // Botones de acciones del trabajo mientras está en servicio
 post('/turno/accion', async ({ user, db: d }, req) => panel.logAction(d, user.id, req.body?.accion));
 post('/turno/deshacer', async ({ user, db: d }) => panel.undoAction(d, user.id));

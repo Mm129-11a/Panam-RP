@@ -344,3 +344,62 @@ test('enviar dinero: buscar a quién (nombre, cédula o Roblox), recientes y com
   assert.equal((await P.recentPayees(db, ANA.id))[0].cedula, luis.cedula);
   assert.deepEqual(await P.recentPayees(db, BETO.id), [], 'recibir no cuenta como reciente');
 });
+
+test('pago móvil: número de celular, cobros (pagar, rechazar, cancelar) y buscar por número', async () => {
+  const db = await fresh();
+  const ana = await citizen(db, ANA);
+  const beto = await citizen(db, BETO, {}, 0.77);
+  const a = await P.getCharacter(db, ANA.id);
+  const b = await P.getCharacter(db, BETO.id);
+  assert.match(a.telefono, /^6\d{3}-\d{4}$/);
+  assert.notEqual(a.telefono, b.telefono);
+  assert.equal(await P.ensurePhone(db, ANA.id), a.telefono, 'el número no cambia');
+  assert.equal((await P.findPayees(db, ANA.id, b.telefono.slice(0, 6)))[0].cedula, beto.cedula, 'se busca por número');
+  // cobro: Ana le cobra a Beto
+  await rejects(() => P.requestMoney(db, ANA.id, ana.cedula, 100), 400);
+  const c1 = await P.requestMoney(db, ANA.id, beto.cedula, 2500, '🏠 Renta', NOW);
+  assert.equal(c1.toId, BETO.id);
+  let L = await P.listRequests(db, BETO.id);
+  assert.equal(L.entrantes.length, 1);
+  assert.equal(L.entrantes[0].nombre, ana.nombre);
+  assert.equal(L.entrantes[0].discord_id, undefined);
+  await rejects(() => P.payRequest(db, ANA.id, c1.id), 404, /pendiente/);
+  const before = Number((await P.getAccount(db, BETO.id)).banco);
+  const paid = await P.payRequest(db, BETO.id, c1.id, NOW + 1);
+  assert.equal(paid.fromId, ANA.id);
+  assert.equal(Number(paid.account.banco), before - 2500);
+  await rejects(() => P.payRequest(db, BETO.id, c1.id), 404); // no se paga dos veces
+  assert.equal((await P.listRequests(db, ANA.id)).salientes[0].estado, 'pagado');
+  // rechazar y cancelar
+  const c2 = await P.requestMoney(db, ANA.id, beto.cedula, 10, null, NOW + 2);
+  await P.declineRequest(db, BETO.id, c2.id);
+  const c3 = await P.requestMoney(db, ANA.id, beto.cedula, 10, null, NOW + 3);
+  await rejects(() => P.cancelRequest(db, BETO.id, c3.id), 404); // solo quien cobra lo cancela
+  await P.cancelRequest(db, ANA.id, c3.id);
+  L = await P.listRequests(db, ANA.id);
+  assert.deepEqual(L.salientes.map((r) => r.estado), ['cancelado', 'rechazado', 'pagado']);
+  assert.equal((await P.listRequests(db, BETO.id)).entrantes.length, 0);
+  // no más de 5 cobros pendientes a la misma persona
+  for (let i = 0; i < 5; i++) await P.requestMoney(db, ANA.id, beto.cedula, 1, null, NOW + 10 + i);
+  await rejects(() => P.requestMoney(db, ANA.id, beto.cedula, 1), 409);
+  // pagar sin saldo
+  const big = await P.requestMoney(db, BETO.id, ana.cedula, 900_000, null, NOW + 20);
+  await rejects(() => P.payRequest(db, ANA.id, big.id), 400, /tanto/);
+});
+
+test('ATT ↔ Mecánico sin salir de turno; las demás no', async () => {
+  const db = await fresh();
+  await citizen(db, ANA);
+  const jobs = { transito: { name: 'ATT' }, mecanico: { name: 'Mecánico' }, policia: { name: 'Policía' } };
+  await P.startShift(db, ANA.id, 'transito', { jobs, allowed: ['transito', 'mecanico', 'policia'], now: NOW });
+  await rejects(() => P.switchShift(db, ANA.id, 'policia', { jobs, allowed: ['transito', 'mecanico', 'policia'], now: NOW + 1 }), 400);
+  await rejects(() => P.switchShift(db, ANA.id, 'mecanico', { jobs, allowed: ['transito'], now: NOW + 1 }), 403);
+  const r = await P.switchShift(db, ANA.id, 'mecanico', { jobs, allowed: ['transito', 'mecanico'], now: NOW + 45 * 60_000 });
+  assert.deepEqual(r, { from: 'transito', fromName: 'ATT', to: 'mecanico', toName: 'Mecánico', minutes: 45 });
+  assert.equal((await P.activeShift(db, ANA.id)).job, 'mecanico');
+  const [h] = await P.listShifts(db, ANA.id);
+  assert.equal(h.job, 'transito');
+  assert.equal(h.minutes, 45);
+  const back = await P.switchShift(db, ANA.id, 'transito', { jobs, allowed: ['transito', 'mecanico'], now: NOW + 60 * 60_000 });
+  assert.equal(back.minutes, 15);
+});

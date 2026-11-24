@@ -45,6 +45,7 @@
     grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
     image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
     undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+    copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
     link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
   };
   const ico = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || ''}</svg>`;
@@ -179,7 +180,7 @@
       <div class="pn-cats">
         ${cat('#perfil', 'green', 'user', 'Mi perfil', 'Cédula, banco, multas y antecedentes', '/img/categorias/perfil.svg')}
         ${hasWork() ? cat('#trabajos', 'blue', 'power', 'Servicio Trabajos', S.jobs.length === 1 ? `Tu trabajo: ${jobInfo(S.jobs[0]).name}` : 'Inicia y termina tus turnos', jobImg(S.shift?.job || S.jobs[0])) : ''}
-        ${cat('#banco', 'gold', 'bank', 'Banco', 'Depósitos, retiros y envíos de dinero', '/img/categorias/banco.svg')}
+        ${cat('#banco', 'gold', 'bank', 'Banco', S.cobros?.entrantes?.length ? `💸 Tienes ${S.cobros.entrantes.length} cobro(s) por pagar` : 'Enviar, cobrar, depositar y retirar', '/img/categorias/banco.svg')}
         ${cat('#tienda', 'purple', 'home', 'Casas y mis carros', 'Inmobiliaria y tus vehículos', '/img/categorias/casas.svg')}
         ${cat('#negro', 'dark', 'mask', 'Mercado negro', 'Se paga en efectivo', '/img/categorias/negro.svg')}
         ${cat('#justicia', 'cyan', 'scale', 'Justicia', 'Denuncias y juicios', '/img/categorias/justicia.svg')}
@@ -436,7 +437,9 @@
     if (!S.character) {
       controls = `<a class="pn-btn gold" href="#perfil">Crea tu cédula para trabajar</a>`;
     } else if (on) {
-      controls = `<div class="pn-row"><button class="pn-btn red lg" type="button" data-act="terminar">${ico('power')}Terminar turno</button>${payTag(on.job)}</div>`;
+      const canSwitch = ((S.switches || {})[on.job] || []).filter((k) => S.jobs.includes(k));
+      controls = `<div class="pn-row"><button class="pn-btn red lg" type="button" data-act="terminar">${ico('power')}Terminar turno</button>${payTag(on.job)}</div>
+        ${canSwitch.map((k) => `<button class="pn-switch" type="button" data-act="cambiar" data-job="${esc(k)}" data-color="${esc(jobInfo(k).color)}"><span>${jobInfo(k).icon}</span><span><b>Cambiar a ${esc(jobInfo(k).name)}</b><small>Sin salir de turno · tu tiempo de ${esc(j.name)} queda guardado</small></span>${ico('swap')}</button>`).join('')}`;
     } else {
       // Un botón por trabajo, cada uno con su color y lo que gana (si un admin lo puso con /salario-configurar)
       controls = `<div class="pn-jobbtns">${S.jobs.map((k) => {
@@ -590,20 +593,41 @@
         <div class="pn-bal"><span>${ico('cash')}</span><small>Efectivo</small><b>${money(S.account.efectivo)}</b></div>
         <div class="pn-bal"><span>${ico('alert')}</span><small>Multas pendientes</small><b class="${owed() ? 'neg' : ''}">${money(owed())}</b></div>
       </div>
-      ${sueldos()}
+      ${cobrosBox('in')}
       <div class="pn-two">
-        <section class="pn-box">${moverForm()}</section>
         <section class="pn-box pn-send">${sendCard()}</section>
+        <section class="pn-box">${moverForm()}</section>
       </div>
+      ${cobrosBox('out')}
+      ${sueldos()}
       <section class="pn-box"><h3 class="pn-h3">Movimientos</h3>${txList(S.transactions)}</section>`;
   }
-  // Tarjeta de Enviar dinero (abre el envío paso a paso)
+  // Billetera: tu número, Enviar y Cobrar, y los recientes (como las apps de pago del celular)
   function sendCard() {
     if (!ui.txRecent) loadRecent();
     const rec = ui.txRecent || [];
-    return `<div class="pn-send-top"><span class="pn-send-ico">${ico('send')}</span><div><h4>Enviar dinero</h4><p>A cualquier ciudadano, al instante y sin comisión.</p></div></div>
-      ${rec.length ? `<div class="pn-send-rec"><small>Recientes</small><div>${rec.map((p, i) => `<button type="button" class="pn-person" data-act="tx-open" data-rec="${i}" title="${esc(p.nombre)} ${esc(p.apellidos)}">${avatar(p)}<span>${esc(p.nombre.split(' ')[0])}</span></button>`).join('')}</div></div>` : ''}
-      <button class="pn-btn gold lg pn-send-go" type="button" data-act="tx-open">${ico('send')}Enviar dinero</button>`;
+    return `<div class="pn-send-top"><span class="pn-send-ico">${ico('send')}</span><div><h4>Pago móvil</h4><p>Envía y cobra al instante, sin comisión.</p></div></div>
+      ${S.telefono ? `<button type="button" class="pn-myphone" data-act="copiar-num" title="Copiar tu número"><small>Tu número</small><b class="mono">${esc(S.telefono)}</b>${ico('copy')}</button>` : ''}
+      <div class="pn-send-btns">
+        <button class="pn-btn gold lg" type="button" data-act="tx-open">${ico('send')}Enviar</button>
+        <button class="pn-btn blue lg" type="button" data-act="tx-open" data-mode="cobrar">${ico('receipt')}Cobrar</button>
+      </div>
+      ${rec.length ? `<div class="pn-send-rec"><small>Recientes</small><div>${rec.map((p, i) => `<button type="button" class="pn-person" data-act="tx-open" data-rec="${i}" title="${esc(p.nombre)} ${esc(p.apellidos)}">${avatar(p)}<span>${esc(p.nombre.split(' ')[0])}</span></button>`).join('')}</div></div>` : ''}`;
+  }
+  // Cobros que te hicieron (para pagar o rechazar) y los que hiciste tú
+  function cobrosBox(which) {
+    const inc = which === 'in' ? S.cobros?.entrantes || [] : [];
+    const out = which === 'out' ? S.cobros?.salientes || [] : [];
+    if (!inc.length && !out.length) return '';
+    const EST = { pendiente: ['Pendiente', ''], pagado: ['Pagado', 'ok'], rechazado: ['Rechazado', 'bad'], cancelado: ['Cancelado', ''] };
+    return `<div>
+      ${inc.length ? `<section class="pn-box pn-cobros in"><h3 class="pn-h3">💸 Te están cobrando</h3><ul class="pn-list">${inc.map((r) => `<li>${avatar(r)}
+          <div><b>${esc(r.nombre)} ${esc(r.apellidos)}</b><small>${r.concepto ? `${esc(r.concepto)} · ` : ''}${fechaHora(r.created_at)}</small></div>
+          <div class="pn-li-r pn-cobro-r"><strong>${money(r.monto)}</strong><span><button class="pn-btn gold sm" type="button" data-act="cobro-pagar" data-id="${r.id}">Pagar</button><button class="pn-btn ghost sm" type="button" data-act="cobro-rechazar" data-id="${r.id}">Rechazar</button></span></div></li>`).join('')}</ul></section>` : ''}
+      ${out.length ? `<section class="pn-box pn-cobros"><h3 class="pn-h3">Tus cobros</h3><ul class="pn-list">${out.map((r) => `<li>${avatar(r)}
+          <div><b>${esc(r.nombre)} ${esc(r.apellidos)}</b><small>${r.concepto ? `${esc(r.concepto)} · ` : ''}${fechaHora(r.created_at)}</small></div>
+          <div class="pn-li-r pn-cobro-r"><strong>${money(r.monto)}</strong><span><span class="pn-tag ${EST[r.estado]?.[1] || ''}">${EST[r.estado]?.[0] || esc(r.estado)}</span>${r.estado === 'pendiente' ? `<button class="pn-btn ghost sm" type="button" data-act="cobro-cancelar" data-id="${r.id}">Cancelar</button>` : ''}</span></div></li>`).join('')}</ul></section>` : ''}
+    </div>`;
   }
   async function loadRecent() {
     ui.txRecent = [];
@@ -909,14 +933,14 @@
   const AV = ['#e11d2e', '#2563eb', '#7c3aed', '#0891b2', '#db2777', '#ea580c', '#16a34a'];
   function avatar(p, big = false) {
     const name = `${p.nombre || ''} ${p.apellidos || ''}`.trim();
-    let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    let h = 2166136261; for (const c of name) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
     const ini = (p.nombre?.[0] || '?') + (p.apellidos?.[0] || '');
     return `<span class="pn-av av${h % AV.length} ${big ? 'big' : ''}">${esc(ini.toUpperCase())}</span>`; // color por clase (la CSP no deja style en línea)
   }
   const QUICK = [100, 500, 1000, 5000];
   const NOTES = ['🏠 Renta', '🍔 Comida', '🚗 Carro', '🎁 Regalo', '💼 Pago', '🤝 Préstamo'];
-  function openTransfer(to = null) {
-    ui.tx = { step: to ? 'monto' : 'quien', to, monto: '', nota: '', q: '', results: null };
+  function openTransfer(to = null, mode = 'enviar', extra = {}) {
+    ui.tx = { mode, step: to ? 'monto' : 'quien', to, monto: '', nota: '', q: '', results: null, ...extra };
     modal.querySelector('.pn-modal-box').classList.add('tx');
     txRender();
     modal.classList.remove('hidden');
@@ -925,43 +949,54 @@
   }
   function txRender() {
     const t = ui.tx; if (!t) return;
+    const cobrar = t.mode === 'cobrar';
     const banco = Number(S.account?.banco || 0);
     const n = Number(t.monto || 0);
     const steps = ['quien', 'monto', 'confirmar'];
     const dots = t.step === 'listo' ? '' : `<div class="tx-dots">${steps.map((x, i) => `<i class="${steps.indexOf(t.step) >= i ? 'on' : ''}"></i>`).join('')}</div>`;
-    const who = t.to ? `<div class="tx-to">${avatar(t.to)}<div><b>${esc(t.to.nombre)} ${esc(t.to.apellidos)}</b><small>${esc(t.to.cedula)}${t.to.roblox_name ? ` · ${esc(t.to.roblox_name)}` : ''}</small></div>${t.step !== 'listo' ? '<button class="pn-btn ghost sm" type="button" data-act="tx-step" data-step="quien">Cambiar</button>' : ''}</div>` : '';
+    const sub = (p) => [p.telefono, p.cedula, p.roblox_name].filter(Boolean).map(esc).join(' · ');
+    const who = t.to ? `<div class="tx-to">${avatar(t.to)}<div><b>${esc(t.to.nombre)} ${esc(t.to.apellidos)}</b><small>${sub(t.to)}</small></div>${t.step !== 'listo' && t.mode !== 'pagar' ? '<button class="pn-btn ghost sm" type="button" data-act="tx-step" data-step="quien">Cambiar</button>' : ''}</div>` : '';
     let html = '';
     if (t.step === 'quien') {
       const list = t.q.trim().length >= 2 ? (t.results || []) : (ui.txRecent || []);
-      html = `<h3 class="tx-title" id="pn-modal-title">¿A quién le envías?</h3>
-        <label class="tx-search">${ico('search')}<input id="tx-q" type="search" placeholder="Nombre, cédula o usuario de Roblox" autocomplete="off" value="${esc(t.q)}" aria-label="Buscar a quién enviar"></label>
+      html = `<h3 class="tx-title" id="pn-modal-title">${cobrar ? '¿A quién le cobras?' : '¿A quién le envías?'}</h3>
+        <label class="tx-search">${ico('search')}<input id="tx-q" type="search" placeholder="Número, nombre, cédula o Roblox" autocomplete="off" value="${esc(t.q)}" aria-label="Buscar persona"></label>
         <small class="tx-label">${t.q.trim().length >= 2 ? (t.results === null ? 'Buscando…' : `${list.length} resultado(s)`) : (list.length ? 'Recientes' : 'Escribe al menos 2 letras para buscar')}</small>
-        <div class="tx-people">${list.map((p, i) => `<button type="button" class="tx-person" data-act="tx-pick" data-i="${i}">${avatar(p)}<span><b>${esc(p.nombre)} ${esc(p.apellidos)}</b><small>${esc(p.cedula)}${p.roblox_name ? ` · ${esc(p.roblox_name)}` : ''}</small></span>${ico('arrow')}</button>`).join('')}
-          ${t.q.trim().length >= 2 && t.results && !list.length ? '<p class="pn-muted">No encontramos a nadie con eso. Prueba con su cédula.</p>' : ''}</div>`;
+        <div class="tx-people">${list.map((p, i) => `<button type="button" class="tx-person" data-act="tx-pick" data-i="${i}">${avatar(p)}<span><b>${esc(p.nombre)} ${esc(p.apellidos)}</b><small>${sub(p)}</small></span>${ico('arrow')}</button>`).join('')}
+          ${t.q.trim().length >= 2 && t.results && !list.length ? '<p class="pn-muted">No encontramos a nadie con eso. Prueba con su número o su cédula.</p>' : ''}</div>`;
     } else if (t.step === 'monto') {
-      const over = n > banco;
-      html = `<h3 class="tx-title" id="pn-modal-title">¿Cuánto le envías?</h3>${who}
+      const over = !cobrar && n > banco;
+      html = `<h3 class="tx-title" id="pn-modal-title">${cobrar ? '¿Cuánto le cobras?' : '¿Cuánto le envías?'}</h3>${who}
         <div class="tx-amount ${over ? 'over' : ''}"><span>$</span><b>${n ? n.toLocaleString('es-PA') : '0'}</b></div>
-        <p class="tx-left ${over ? 'bad' : ''}">${over ? `Solo tienes ${money(banco)} en el banco` : `Te quedarían ${money(banco - n)} en el banco`}</p>
-        <div class="tx-quick">${QUICK.map((v) => `<button type="button" data-act="tx-add" data-v="${v}">+${money(v)}</button>`).join('')}<button type="button" data-act="tx-add" data-v="todo">Todo</button></div>
+        <p class="tx-left ${over ? 'bad' : ''}">${cobrar ? 'Le llega un aviso para que te pague' : over ? `Solo tienes ${money(banco)} en el banco` : `Te quedarían ${money(banco - n)} en el banco`}</p>
+        <div class="tx-quick">${QUICK.map((v) => `<button type="button" data-act="tx-add" data-v="${v}">+${money(v)}</button>`).join('')}${cobrar ? '' : '<button type="button" data-act="tx-add" data-v="todo">Todo</button>'}</div>
         <div class="tx-pad">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', '⌫'].map((k) => `<button type="button" data-act="tx-key" data-k="${k}" ${k === '⌫' ? 'aria-label="Borrar"' : ''}>${k}</button>`).join('')}</div>
-        <small class="tx-label">Nota (opcional)</small>
+        <small class="tx-label">${cobrar ? 'Concepto (opcional)' : 'Nota (opcional)'}</small>
         <div class="tx-notes">${NOTES.map((x) => `<button type="button" class="${t.nota === x ? 'on' : ''}" data-act="tx-nota" data-v="${esc(x)}">${x}</button>`).join('')}</div>
         <input class="ap-input tx-nota" id="tx-nota" maxlength="80" placeholder="O escribe una nota" value="${esc(NOTES.includes(t.nota) ? '' : t.nota)}" aria-label="Nota">
         <button class="pn-btn gold lg tx-next" type="button" data-act="tx-step" data-step="confirmar" ${n >= 1 && !over ? '' : 'disabled'}>Continuar</button>`;
     } else if (t.step === 'confirmar') {
-      html = `<h3 class="tx-title" id="pn-modal-title">Revisa y confirma</h3>
-        <div class="tx-check"><small>Vas a enviar</small><div class="tx-amount sm"><span>$</span><b>${n.toLocaleString('es-PA')}</b></div>${who}
-          <dl><div><dt>Desde</dt><dd>Tu banco (${money(banco)})</dd></div><div><dt>Comisión</dt><dd>Gratis</dd></div>${t.nota ? `<div><dt>Nota</dt><dd>${esc(t.nota)}</dd></div>` : ''}<div><dt>Te quedan</dt><dd>${money(banco - n)}</dd></div></dl></div>
-        <button class="pn-btn gold lg tx-next" type="button" data-act="tx-send">${ico('send')}Enviar ${money(n)}</button>
-        <button class="pn-btn ghost tx-back" type="button" data-act="tx-step" data-step="monto">Atrás</button>`;
+      const pay = t.mode === 'pagar';
+      html = `<h3 class="tx-title" id="pn-modal-title">${pay ? 'Pagar cobro' : 'Revisa y confirma'}</h3>
+        <div class="tx-check"><small>${cobrar ? 'Vas a cobrarle' : pay ? 'Vas a pagarle' : 'Vas a enviar'}</small><div class="tx-amount sm ${!cobrar && n > banco ? 'over' : ''}"><span>$</span><b>${n.toLocaleString('es-PA')}</b></div>${who}
+          <dl>${cobrar ? '<div><dt>Le llega</dt><dd>Un mensaje para pagar</dd></div>' : `<div><dt>Desde</dt><dd>Tu banco (${money(banco)})</dd></div>`}<div><dt>Comisión</dt><dd>Gratis</dd></div>${t.nota ? `<div><dt>${cobrar || pay ? 'Concepto' : 'Nota'}</dt><dd>${esc(t.nota)}</dd></div>` : ''}${cobrar ? '' : `<div><dt>Te quedan</dt><dd>${money(banco - n)}</dd></div>`}</dl></div>
+        <button class="pn-btn ${cobrar ? 'blue' : 'gold'} lg tx-next" type="button" data-act="tx-send" ${!cobrar && n > banco ? 'disabled' : ''}>${ico(cobrar ? 'receipt' : 'send')}${cobrar ? `Cobrar ${money(n)}` : pay ? `Pagar ${money(n)}` : `Enviar ${money(n)}`}</button>
+        <button class="pn-btn ghost tx-back" type="button" ${pay ? 'data-act="cerrar"' : 'data-act="tx-step" data-step="monto"'}>${pay ? 'Ahora no' : 'Atrás'}</button>`;
     } else if (t.step === 'listo') {
       const r = t.done;
+      if (cobrar) {
+        html = `<div class="tx-ok"><div class="tx-ok-ico"><svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24"/><path d="M15 27 l7 7 l15 -16"/></svg></div>
+            <h3 class="tx-title" id="pn-modal-title">¡Cobro enviado!</h3><div class="tx-amount sm"><span>$</span><b>${Number(r.monto).toLocaleString('es-PA')}</b></div>
+            <p class="tx-left">A ${esc(r.to)} le llegó un mensaje. Cuando pague, el dinero entra a tu banco.</p></div>
+          <button class="pn-btn gold lg tx-next" type="button" data-act="cerrar">Listo</button>`;
+        $('#pn-modal-body').innerHTML = `<div class="tx-wrap">${html}</div>`;
+        return;
+      }
       html = `<div class="tx-ok"><div class="tx-ok-ico"><svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24"/><path d="M15 27 l7 7 l15 -16"/></svg></div>
-          <h3 class="tx-title" id="pn-modal-title">¡Dinero enviado!</h3><div class="tx-amount sm"><span>$</span><b>${Number(r.monto).toLocaleString('es-PA')}</b></div></div>
+          <h3 class="tx-title" id="pn-modal-title">${t.mode === 'pagar' ? '¡Cobro pagado!' : '¡Dinero enviado!'}</h3><div class="tx-amount sm"><span>$</span><b>${Number(r.monto).toLocaleString('es-PA')}</b></div></div>
         <div class="tx-receipt">${who}<dl><div><dt>Comprobante</dt><dd class="mono">${esc(r.ref)}</dd></div><div><dt>Fecha</dt><dd>${fechaHora(r.at)}</dd></div>${r.nota ? `<div><dt>Nota</dt><dd>${esc(r.nota)}</dd></div>` : ''}<div><dt>Tu saldo</dt><dd>${money(r.account.banco)}</dd></div></dl></div>
         <button class="pn-btn gold lg tx-next" type="button" data-act="cerrar">Listo</button>
-        <button class="pn-btn ghost tx-back" type="button" data-act="tx-again">Enviar otra vez a ${esc(t.to.nombre.split(' ')[0])}</button>`;
+        ${t.mode === 'pagar' ? '' : `<button class="pn-btn ghost tx-back" type="button" data-act="tx-again">Enviar otra vez a ${esc(t.to.nombre.split(' ')[0])}</button>`}`;
     }
     $('#pn-modal-body').innerHTML = `<div class="tx-wrap">${dots}${html}</div>`;
   }
@@ -987,7 +1022,7 @@
     const again = $('#tx-q'); if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch { /* */ } }
   }
   document.addEventListener('keydown', (ev) => {
-    if (!ui.tx || ui.tx.step !== 'monto' || modal.classList.contains('hidden') || ev.target.id === 'tx-nota') return;
+    if (!ui.tx || ui.tx.step !== 'monto' || modal.classList.contains('hidden') || ev.target.id === 'tx-nota' || ev.target.id === 'tx-q') return;
     if (/^[0-9]$/.test(ev.key)) { txKey(ev.key); ev.preventDefault(); } else if (ev.key === 'Backspace') { txKey('⌫'); ev.preventDefault(); }
   });
   function txKey(k) {
@@ -1133,20 +1168,29 @@
     if (act === 'reintentar') return void load();
     if (act === 'cerrar') return closeModal();
     if (act === 'modal') return openModal(b.dataset.m);
-    if (act === 'tx-open') return openTransfer(b.dataset.rec != null ? (ui.txRecent || [])[Number(b.dataset.rec)] || null : null);
+    if (act === 'tx-open') return openTransfer(b.dataset.rec != null ? (ui.txRecent || [])[Number(b.dataset.rec)] || null : null, b.dataset.mode || 'enviar');
+    if (act === 'copiar-num') { navigator.clipboard?.writeText(S.telefono || '').then(() => toast('Número copiado'), () => toast(`Tu número: ${S.telefono}`)); return; }
+    if (act === 'cobro-pagar') {
+      const r = (S.cobros?.entrantes || []).find((x) => String(x.id) === b.dataset.id);
+      if (r) { openTransfer(r, 'pagar', { step: 'confirmar', monto: String(r.monto), nota: r.concepto || '', reqId: r.id }); }
+      return;
+    }
     if (act === 'tx-pick') { const t = ui.tx; const list = t.q.trim().length >= 2 ? t.results || [] : ui.txRecent || []; t.to = list[Number(b.dataset.i)] || null; if (t.to) { t.step = 'monto'; txRender(); } return; }
     if (act === 'tx-step') { ui.tx.step = b.dataset.step; txRender(); if (ui.tx.step === 'quien') setTimeout(() => $('#tx-q')?.focus(), 30); return; }
     if (act === 'tx-key') return txKey(b.dataset.k);
     if (act === 'tx-add') { const t = ui.tx; const bal = Number(S.account?.banco || 0); t.monto = String(b.dataset.v === 'todo' ? bal : Math.min(Number(t.monto || 0) + Number(b.dataset.v), S.money?.maxMove || 1_000_000)); txRender(); return; }
     if (act === 'tx-nota') { ui.tx.nota = ui.tx.nota === b.dataset.v ? '' : b.dataset.v; txRender(); return; }
-    if (act === 'tx-again') { const to = ui.tx.to; openTransfer(to); return; }
+    if (act === 'tx-again') { const to = ui.tx.to; openTransfer(to, 'enviar'); return; }
     if (act === 'tx-send') {
       const t = ui.tx;
       return void run(null, async () => {
         b.disabled = true;
         try {
-          const r = await api('/api/panel/banco/transferir', { cedula: t.to.cedula, monto: t.monto, nota: t.nota });
-          S.account = r.account; t.done = r; t.step = 'listo'; ui.txRecent = null;
+          const r = t.mode === 'cobrar' ? await api('/api/panel/banco/cobrar', { cedula: t.to.cedula, monto: t.monto, concepto: t.nota })
+            : t.mode === 'pagar' ? await api('/api/panel/banco/cobro/pagar', { id: t.reqId })
+              : await api('/api/panel/banco/transferir', { cedula: t.to.cedula, monto: t.monto, nota: t.nota });
+          if (r.account) S.account = r.account;
+          t.done = r; t.step = 'listo'; ui.txRecent = null;
           txRender();
           refresh().catch(() => {});
         } finally { b.disabled = false; }
@@ -1178,6 +1222,19 @@
         await api('/api/panel/turno/iniciar', { job: b.dataset.job || $('#pn-job')?.value });
         toast('Turno iniciado. ¡Buen trabajo!');
         ui.activity = null;
+        await refresh();
+      } else if (act === 'cobro-rechazar') {
+        if (!window.confirm('¿Rechazar este cobro?')) return;
+        await api('/api/panel/banco/cobro/rechazar', { id: Number(b.dataset.id) });
+        toast('Cobro rechazado. Le avisamos por mensaje.');
+        await refresh();
+      } else if (act === 'cobro-cancelar') {
+        await api('/api/panel/banco/cobro/cancelar', { id: Number(b.dataset.id) });
+        toast('Cobro cancelado.');
+        await refresh();
+      } else if (act === 'cambiar') {
+        const r = (await api('/api/panel/turno/cambiar', { job: b.dataset.job })).result;
+        toast(`${jobInfo(r.to).icon} Ahora estás en servicio como ${r.toName} (${hm(r.minutes)} guardados en ${r.fromName}).`);
         await refresh();
       } else if (act === 'accion') {
         const r = await api('/api/panel/turno/accion', { accion: b.dataset.accion });
